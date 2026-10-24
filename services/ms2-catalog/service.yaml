@@ -8,10 +8,11 @@ owner:
 repo: Nur-tricenter/ms2-plans-and-recipes-catalog
 status: complete
 summary: >-
-  Gestiona el catálogo de alimentos (ingredientes), recetas y planes de comida de la plataforma. Es la
-  fuente de verdad del contenido nutricional y publica eventos cuando se crean o modifican alimentos,
-  recetas y planes.
-stack: [.NET 8, Clean Architecture, DDD, MediatR, EF Core 9, PostgreSQL, RabbitMQ (Joseco)]
+  Fuente de verdad del contenido nutricional de la plataforma: alimentos con facts nutricionales,
+  recetas compuestas por ingredientes y planes de comida de 15 o 30 días. Publica 5 eventos de
+  integración vía outbox y proyecta PlanAuthors desde identity. Proveedor síncrono de la
+  composición de planes para MS4 (job diario).
+stack: [.NET 8, Clean Architecture, DDD, MediatR, EF Core 9, PostgreSQL, RabbitMQ (Joseco), Consul]
 
 runtime:
   consul_name: catalog-service
@@ -21,13 +22,13 @@ runtime:
 
 aggregates:
   - name: Food
-    description: Alimento/ingrediente con categoría, facts nutricionales por 100 unidades y unidad de medida.
+    description: Alimento/ingrediente con categoría, facts nutricionales por unidad y unidad de medida.
     states: []
   - name: Recipe
-    description: Receta con nombre, instrucciones e ingredientes.
+    description: Receta con nombre, instrucciones e ingredientes (alimento + porción). Calcula info nutricional total.
     states: []
   - name: MealPlan
-    description: Plan de comida con duración, días, meal times y asignaciones de recetas. Author leído del token.
+    description: Plan de comida de 15 o 30 días con PlanDays, MealTimes y asignaciones de recetas. Autor leído del token.
     states: []
 
 endpoints:
@@ -35,7 +36,7 @@ endpoints:
     path: /api/v1/foods
     scope: catalog.food:create
     callers: [frontend]
-    summary: Crear alimento.
+    summary: Crear alimento (publica food-published).
     idempotent: false
   - method: GET
     path: /api/v1/foods/{id}
@@ -46,39 +47,39 @@ endpoints:
   - method: GET
     path: /api/v1/foods
     scope: catalog.food:read
-    callers: [frontend, ms4]
-    summary: Listar alimentos paginado.
+    callers: [frontend]
+    summary: Listar alimentos paginado (page, pageSize).
     idempotent: true
   - method: GET
     path: /api/v1/foods/category/{category}
     scope: catalog.food:read
     callers: [frontend]
-    summary: Buscar alimentos por categoría.
+    summary: Buscar alimentos por categoría (paginado).
     idempotent: true
   - method: PUT
     path: /api/v1/foods
     scope: catalog.food:edit
     callers: [frontend]
-    summary: Actualizar alimento.
+    summary: Actualizar alimento (dispara FoodUpdated interno; no publica contrato externo).
     idempotent: true
   - method: POST
     path: /api/v1/recipes
     scope: catalog.recipe:create
     callers: [frontend]
-    summary: Crear receta.
+    summary: Crear receta (publica recipe-published, sin ingredientes).
     idempotent: false
   - method: POST
     path: /api/v1/recipes/ingredients
     scope: catalog.recipe:edit
     callers: [frontend]
-    summary: Agregar ingrediente a receta.
+    summary: Agregar ingrediente(s) a una receta.
     idempotent: false
   - method: DELETE
     path: /api/v1/recipes/{recipeId}/ingredients/{foodId}
     scope: catalog.recipe:edit
     callers: [frontend]
-    summary: Quitar ingrediente de receta.
-    idempotent: true
+    summary: Quitar ingrediente de una receta.
+    idempotent: false
   - method: GET
     path: /api/v1/recipes/{id}
     scope: catalog.recipe:read
@@ -95,37 +96,37 @@ endpoints:
     path: /api/v1/recipes/{recipeId}/nutritional-info
     scope: catalog.recipe:read
     callers: [frontend]
-    summary: Info nutricional de la receta.
+    summary: Info nutricional total calculada de la receta.
     idempotent: true
   - method: POST
     path: /api/v1/meal-plans
     scope: catalog.mealPlan:create
     callers: [frontend]
-    summary: Crear plan (author = sub del token).
+    summary: Crear plan de 15 o 30 días (author = sub del token; publica meal-plan-published).
     idempotent: false
   - method: POST
     path: /api/v1/meal-plans/meal-times
     scope: catalog.mealPlan:edit
     callers: [frontend]
-    summary: Agregar meal time a un plan.
+    summary: Agregar un tiempo de comida a un día del plan.
     idempotent: false
   - method: POST
     path: /api/v1/meal-plans/assign-recipes
     scope: catalog.mealPlan:edit
     callers: [frontend]
-    summary: Asignar receta a meal time.
+    summary: Asignar receta(s) con ración a un tiempo de comida.
     idempotent: false
   - method: DELETE
     path: /api/v1/meal-plans/{mealPlanId}/meal-times/{mealTimeId}/recipes/{recipeId}
     scope: catalog.mealPlan:edit
     callers: [frontend]
-    summary: Quitar receta de un meal time.
-    idempotent: true
+    summary: Quitar receta de un tiempo de comida.
+    idempotent: false
   - method: GET
     path: /api/v1/meal-plans/{mealPlanId}
     scope: catalog.mealPlan:read
     callers: [frontend, ms4]
-    summary: Composición del plan.
+    summary: Composición completa del plan (plan → días → tiempos → recetas → ingredientes).
     idempotent: true
   - method: GET
     path: /api/v1/meal-plans
@@ -137,7 +138,7 @@ endpoints:
     path: /health
     scope: null
     callers: [external:consul]
-    summary: Health check anónimo.
+    summary: Health check anónimo para Consul.
     idempotent: true
 
 sync_calls: []
@@ -146,27 +147,27 @@ events_published:
   - exchange: food-published
     contract: FoodPublished
     event_type: Food.Published
-    trigger: Se crea un alimento (ingrediente) en el catálogo.
+    trigger: Se crea un alimento (POST /foods).
     outbox: true
   - exchange: food-nutritional-info-updated
     contract: FoodNutritionalInfoUpdated
     event_type: Food.NutritionalInfoUpdated
-    trigger: Cambian los datos nutricionales de un alimento.
+    trigger: Invocación de Food.UpdateNutritionalInfo (sin invocador hoy; ver ms2-gap-02).
     outbox: true
   - exchange: recipe-published
     contract: RecipePublished
     event_type: Recipe.Published
-    trigger: Se crea una receta en el catálogo.
+    trigger: Se crea una receta (POST /recipes).
     outbox: true
   - exchange: recipe-updated
     contract: RecipeUpdated
     event_type: Recipe.Updated
-    trigger: Se actualizan los datos descriptivos de una receta (nombre o instrucciones).
+    trigger: Invocación de Recipe.Update (sin endpoint hoy; alta/baja de ingredientes no lo dispara; ver ms2-gap-03).
     outbox: true
   - exchange: meal-plan-published
     contract: MealPlanPublished
     event_type: MealPlan.Published
-    trigger: Se publica un plan de comida en el catálogo.
+    trigger: Se crea un plan (POST /meal-plans).
     outbox: true
 
 events_consumed:
@@ -174,22 +175,40 @@ events_consumed:
     exchange: user-published
     contract: UserPublished
     handler: UserPublishedConsumer
-    effect: Upsert PlanAuthors (read model).
-    idempotent: true
-  - queue: ms2.user-updated
-    exchange: user-updated
-    contract: UserChanged
-    handler: (no implementado)
-    effect: Pendiente.
+    effect: Upsert PlanAuthors (read model) desde identity.
     idempotent: true
 
 gaps:
   - id: ms2-gap-01
-    summary: Consumidor de UserChanged no implementado (cola declarada sin handler).
+    summary: Cola ms2.user-updated declarada sin consumidor; cambios de usuario no se proyectan.
     severity: medium
+    blocked_by: identity
   - id: ms2-gap-02
-    summary: RecipePublished/RecipeUpdated no transportan ingredientes; no hay evento "receta completa".
+    summary: food-nutritional-info-updated cableado pero inalcanzable (UpdateNutritionalInfo sin invocador).
     severity: medium
   - id: ms2-gap-03
-    summary: Catalog no tiene tests (0 tests).
+    summary: recipe-updated cableado pero inalcanzable vía API; alta/baja de ingredientes no lo dispara.
+    severity: medium
+  - id: ms2-gap-04
+    summary: RecipePublished/RecipeUpdated no transportan ingredientes; no hay evento de receta completa.
+    severity: medium
+  - id: ms2-gap-05
+    summary: FoodUpdated solo se proyecta al read model; no hay contrato de integración para cambios de alimento.
+    severity: medium
+  - id: ms2-gap-06
+    summary: Cambios de plan (MealPlanUpdated, MealTimeAddedToPlan, RecipeAssignedToMealTime, RecipeRemovedFromMealTime) no se publican externamente.
+    severity: low
+  - id: ms2-gap-07
+    summary: Autorización por objeto (BOLA); cualquier token con scope edit modifica cualquier recurso.
+    severity: high
+    blocked_by: identity
+  - id: ms2-gap-08
+    summary: GetMealPlanComposition hace consultas en bucle (N+1) contra el read model.
+    severity: low
+  - id: ms2-gap-09
+    summary: Nombre en Consul inconsistente entre default (catalog-service) y override de plataforma (catalog).
+    severity: low
+    blocked_by: gateway
+  - id: ms2-gap-10
+    summary: No hay endpoints para editar nombre/instrucciones de receta ni nombre/duración de plan.
     severity: low
