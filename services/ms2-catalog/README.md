@@ -1,6 +1,6 @@
 # MS2 — Catálogo de planes y recetas (Catalog)
 
-> **Owner:** Robert Perez Lino · **Repo:** [Nur-tricenter/ms2-plans-and-recipes-catalog](https://github.com/Nur-tricenter/ms2-plans-and-recipes-catalog) · **Estado de la ficha:** draft
+> **Owner:** Robert Perez Lino · **Repo:** [Nur-tricenter/ms2-plans-and-recipes-catalog](https://github.com/Nur-tricenter/ms2-plans-and-recipes-catalog) · **Estado de la ficha:** complete
 
 ## Propósito
 Gestiona el catálogo de alimentos (ingredientes), recetas y planes de comida de la plataforma. Es la fuente de verdad del contenido nutricional que consumen los demás servicios (producción, catering, delivery). Publica eventos cuando se crean o modifican alimentos, recetas y planes para que el resto del sistema se mantenga sincronizado.

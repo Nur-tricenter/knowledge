@@ -6,7 +6,7 @@ owner:
   name: "Robert Perez Lino"
   github: "RobertPls"
 repo: Nur-tricenter/ms2-plans-and-recipes-catalog
-status: draft
+status: complete
 summary: >-
   Gestiona el catálogo de alimentos (ingredientes), recetas y planes de comida de la plataforma. Es la
   fuente de verdad del contenido nutricional y publica eventos cuando se crean o modifican alimentos,
