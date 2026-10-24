@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Nur-tricenter/knowledge/schema/service.schema.json",
+  "title": "Ficha estructurada de un microservicio Nur-Tricenter",
+  "description": "Contrato de datos de services/<ms>/service.yaml. La futura app visual construye el grafo de comunicación a partir de estos campos. Claves en inglés, valores descriptivos en español.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "owner", "repo", "status", "summary", "stack", "runtime", "endpoints", "sync_calls", "events_published", "events_consumed"],
+  "$defs": {
+    "nodeId": {
+      "description": "Identificador de un nodo del grafo: un microservicio, un componente de plataforma (platform/platform.yaml) o un actor externo.",
+      "type": "string",
+      "pattern": "^(ms[1-9]|identity|gateway|frontend|ops|external:[a-z0-9-]+)$"
+    },
+    "httpMethod": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+    "kebab": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" }
+  },
+  "properties": {
+    "id": {
+      "description": "ms1..ms9, identity o gateway. Debe coincidir con el prefijo de la carpeta (services/ms4-delivery-calendar → ms4).",
+      "type": "string",
+      "pattern": "^(ms[1-9]|identity|gateway)$"
+    },
+    "name": { "type": "string", "minLength": 3 },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "github"],
+      "properties": {
+        "name": { "type": "string" },
+        "github": { "type": "string", "pattern": "^[A-Za-z0-9-]+$" }
+      }
+    },
+    "repo": { "type": "string", "pattern": "^Nur-tricenter/[A-Za-z0-9._-]+$" },
+    "status": {
+      "description": "draft = en construcción; complete = cumple el checklist de CONTRIBUTING.md.",
+      "enum": ["draft", "complete"]
+    },
+    "summary": { "type": "string", "minLength": 20, "maxLength": 400 },
+    "stack": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consul_name", "gateway_prefix"],
+      "properties": {
+        "consul_name": { "description": "Nombre con que se registra en Consul; null si no se registra.", "type": ["string", "null"] },
+        "gateway_prefix": { "description": "Prefijo público en el gateway, p. ej. /api/delivery-calendar. null si no está detrás del gateway.", "type": ["string", "null"], "pattern": "^/api/[a-z0-9-]+$" },
+        "database": { "type": ["string", "null"] },
+        "workers": { "description": "Procesos auxiliares (workers de outbox, consumidores).", "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "aggregates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "description"],
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "states": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "endpoints": {
+      "description": "Lo que el servicio EXPONE. path relativo al servicio (sin el prefijo del gateway).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["method", "path", "scope", "callers", "summary"],
+        "properties": {
+          "method": { "$ref": "#/$defs/httpMethod" },
+          "path": { "type": "string", "pattern": "^/" },
+          "scope": { "description": "Scope requerido (kernel Nur.Tricenter.Access) o null si es anónimo.", "type": ["string", "null"] },
+          "callers": { "type": "array", "items": { "$ref": "#/$defs/nodeId" }, "minItems": 1 },
+          "summary": { "type": "string" },
+          "idempotent": { "type": "boolean" }
+        }
+      }
+    },
+    "sync_calls": {
+      "description": "Llamadas HTTP SALIENTES (aristas síncronas del grafo).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["target", "method", "path", "via", "auth", "purpose"],
+        "properties": {
+          "target": { "$ref": "#/$defs/nodeId" },
+          "method": { "$ref": "#/$defs/httpMethod" },
+          "path": { "description": "Ruta tal como sale del servicio (incluye el prefijo del gateway si pasa por él).", "type": "string", "pattern": "^/" },
+          "via": { "enum": ["gateway", "direct"] },
+          "auth": { "description": "none | user-token | service-account:<cuenta>", "type": "string", "pattern": "^(none|user-token|service-account:[a-z0-9-]+)$" },
+          "purpose": { "type": "string" },
+          "on_failure": { "type": "string" }
+        }
+      }
+    },
+    "events_published": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["exchange", "contract", "event_type", "trigger"],
+        "properties": {
+          "exchange": { "$ref": "#/$defs/kebab" },
+          "contract": { "description": "Nombre del record en Nur.Tricenter.Integration.", "type": "string" },
+          "event_type": { "type": "string", "pattern": "^[A-Z][A-Za-z]+\\.[A-Z][A-Za-z]+$" },
+          "trigger": { "type": "string" },
+          "outbox": { "type": "boolean" }
+        }
+      }
+    },
+    "events_consumed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["queue", "exchange", "contract", "handler", "effect"],
+        "properties": {
+          "queue": { "type": "string", "pattern": "^[a-z0-9]+\\.[a-z0-9-]+$" },
+          "exchange": { "$ref": "#/$defs/kebab" },
+          "contract": { "type": "string" },
+          "handler": { "type": "string" },
+          "effect": { "type": "string" },
+          "idempotent": { "type": "boolean" }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "summary", "severity"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+-gap-[0-9]{2}$" },
+          "summary": { "type": "string" },
+          "severity": { "enum": ["high", "medium", "low"] },
+          "blocked_by": { "$ref": "#/$defs/nodeId" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "nur-tricenter-knowledge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Base de conocimiento de la plataforma Nur-Tricenter (diplomado: comunicación entre microservicios).",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "validate": "node scripts/validate.mjs"
+  },
+  "devDependencies": {
+    "ajv": "8.17.1",
+    "yaml": "2.6.1"
+  }
+}

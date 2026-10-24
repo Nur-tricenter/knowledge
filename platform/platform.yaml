@@ -1,0 +1,48 @@
+# Componentes de plataforma en formato de máquina. La futura app visual los dibuja como nodos
+# de infraestructura, junto a los microservicios de services/*/service.yaml.
+
+components:
+  - id: gateway
+    name: API Gateway
+    repo: Nur-tricenter/nur-tricenter-api-gateway
+    kind: gateway
+    tech: [.NET 10, YARP]
+    host_port: 15005
+    summary: Punto de entrada único. Rutea /api/{consul-name}/** al servicio sano registrado en Consul. No valida JWT.
+
+  - id: consul
+    name: Consul
+    kind: service-discovery
+    host_port: 8500
+    summary: Registro y health checks de cada API. El gateway lee de aquí sus rutas cada 30 s.
+
+  - id: identity
+    name: Identity
+    repo: Nur-tricenter/nur-tricenter-identity
+    kind: identity-provider
+    tech: [.NET 8, EF Core, BCrypt]
+    consul_name: identity-service
+    summary: Único emisor de JWT (issuer nur-tricenter-identity). Publica user-published y user-updated.
+
+  - id: rabbitmq
+    name: RabbitMQ
+    kind: message-broker
+    host_port: 5672
+    summary: Exchanges fanout no durables, una cola {consumidor}.{exchange}. Topología importada de nur-tricenter-local.
+
+  - id: postgres
+    name: PostgreSQL
+    kind: database
+    host_port: 5433
+    summary: Instancia compartida en local, una base de datos por servicio.
+
+  - id: jaeger
+    name: Jaeger
+    kind: observability
+    summary: Trazas distribuidas (OpenTelemetry). Configurado como exportador en los kernels; no forma parte del stack local hoy.
+
+kernels:
+  - { package: Nur.Tricenter.Access, purpose: Nombres de scopes y reglas ruta→scope }
+  - { package: Nur.Tricenter.Security, purpose: Validación JWT y policies por scope (AddSecurity) }
+  - { package: Nur.Tricenter.Integration, purpose: Contratos de eventos (IntegrationMessageContract) }
+  - { package: Nur.Tricenter.Observability, purpose: OpenTelemetry, Jaeger, Serilog }
