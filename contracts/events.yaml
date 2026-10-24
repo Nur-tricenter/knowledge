@@ -73,6 +73,15 @@ exchanges:
     payload: [UserId, UserName, Email, Scopes, IsActive, ChangeKind]
     queues: [ms1.user-updated, ms2.user-updated, ms3.user-updated, ms4.user-updated, ms5.user-updated]
 
+  # ── Contratación y producción (MS3) ─────────────────────────────────────────
+  - name: package-validated
+    publisher: ms3
+    contract: PackageValidated
+    namespace: Nur.Tricenter.Integration.Messages.Contracting
+    event_type: Package.Validated
+    payload: [PackageId, PatientId, ProductionOrderId, CatalogPlanId, ReleasedAt, DeliveryAddress, TrackingNumber, Latitude, Longitude]
+    queues: [ms5.package-validated]
+
   # ── Logística (MS5) — publicados vía outbox, pero SIN colas de consumidor en la topología ──
   # El worker de MS5 declara además el sink nurtricenter.default (durable, nunca consumido),
   # enlazado a estos 10 exchanges. No figura en queues porque no es una cola de consumidor.

@@ -30,7 +30,8 @@ Formato: `{servicio}.{recurso}:{acción}`.
 | MS4 Calendario | `deliveryCalendar.calendar:{read,create,edit}`, `deliveryCalendar.productionOrder:read`, `deliveryCalendar.deliveryResult:edit`, `deliveryCalendar.catalogResolution:manage` |
 | Identity | `identity.user:{login,read,create,edit,manage}`, `identity.role:{…}`, `identity:*` |
 | MS5 Logística | _no tiene scopes en el kernel_ (no existe `LogisticsPermission`) y no valida JWT: llama a `AddAuthorization()`/`UseAuthorization()` sin `AddSecurity()`, y sus 7 endpoints de negocio son anónimos |
-| MS1, MS3 | _sin definir_ |
+| MS1 | _sin definir_ |
+| MS3 Contratación | _sin definir_: sus endpoints son anónimos (X-11) |
 
 - `platform:*` (que tiene el `admin` sembrado) se **expande al hacer login** en todos los scopes concretos (`PlatformPermissions.Expand`).
 
@@ -40,6 +41,7 @@ Usuarios técnicos para las llamadas servicio → servicio, con **mínimo privil
 | Cuenta | Usada por | Scopes | Para |
 |---|---|---|---|
 | `ms4-service` | MS4 | `catalog.mealPlan:read` | Leer la composición del plan en MS2 |
+| `ms3-service` | MS3 | `deliveryCalendar.calendar:create`, `deliveryCalendar.productionOrder:read` | Crear el calendario de un contrato y leer la orden de producción en MS4 |
 
 MS5 **no tiene service account**: su única llamada saliente (ClinicService, hoy un mock de Postman) va sin token, y no llama a MS4. Si se cierra X-01 por REST, haría falta `ms5-service` con el scope `deliveryCalendar.deliveryResult:edit`.
 

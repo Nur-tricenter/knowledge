@@ -5,7 +5,7 @@
 ## Qué hay hoy
 | Archivo | Contenido | Fuente |
 |---|---|---|
-| [events.yaml](./events.yaml) | 17 exchanges: publisher, contrato, `EventType`, payload y colas enlazadas | `nur-tricenter-local/topology/rabbitmq-definitions.json` + `nur-tricenter-shared-kernels/nur-tricenter-integration/Messages/**` |
+| [events.yaml](./events.yaml) | 18 exchanges: publisher, contrato, `EventType`, payload y colas enlazadas | `nur-tricenter-local/topology/rabbitmq-definitions.json` + `nur-tricenter-shared-kernels/nur-tricenter-integration/Messages/**` |
 
 Los **contratos REST** de cada servicio viven en su ficha: `services/<ms>/api.md` (humano) y `services/<ms>/service.yaml → endpoints` (máquina).
 

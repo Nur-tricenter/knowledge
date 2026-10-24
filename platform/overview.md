@@ -18,13 +18,13 @@ Cada paso pertenece a un microservicio distinto, y el foco del diplomado está e
 |---|---|---|---|---|
 | MS1 | Pacientes (clínica) | Registro del paciente, datos clínicos y de contacto | _sin repo en la org_ | pendiente |
 | MS2 | Catálogo de planes y recetas | Alimentos, recetas y planes nutricionales por número de día | [ms2-plans-and-recipes-catalog](https://github.com/Nur-tricenter/ms2-plans-and-recipes-catalog) | [complete](../services/ms2-catalog/README.md) |
-| MS3 | Contratación y producción | Contrato, pago y orden de producción diaria | _sin repo en la org_ | pendiente |
+| MS3 | Contratación y producción | Contrato, cobro, calendario en MS4, orden de producción diaria y control de calidad de paquetes | [ms3-contract-and-production](https://github.com/Nur-tricenter/ms3-contract-and-production) | [complete](../services/ms3-contracting/README.md) |
 | MS4 | Calendario de entregas | Calendario por paciente, reglas de cambio (48h), orden de producción consolidada | [ms4-delivery-schedule-management](https://github.com/Nur-tricenter/ms4-delivery-schedule-management) | [completa](../services/ms4-delivery-calendar/README.md) |
 | MS5 | Logística y entregas | Repartidores, ruta del día con la secuencia de paradas y resultado de cada entrega (evidencia o motivo del fallo). Publica 10 eventos; hoy no avisa el resultado a MS4 | [ms5-logistics-and-delivery](https://github.com/Nur-tricenter/ms5-logistics-and-delivery) | [complete](../services/ms5-logistics/README.md) |
 | — | Identity | Usuarios, scopes y emisión de JWT | [nur-tricenter-identity](https://github.com/Nur-tricenter/nur-tricenter-identity) | pendiente |
 | — | API Gateway | Punto de entrada único, ruteo dinámico vía Consul | [nur-tricenter-api-gateway](https://github.com/Nur-tricenter/nur-tricenter-api-gateway) | pendiente |
 
-Las descripciones de MS1 y MS3 vienen de cómo los referencian los demás servicios (llamadas y colas declaradas). Sus owners deben confirmarlas al cargar su ficha.
+La descripción de MS1 viene de cómo lo referencian los demás servicios (llamadas y colas declaradas). Su owner debe confirmarla al cargar su ficha.
 
 Repos de soporte (no son microservicios de negocio):
 - [nur-tricenter-shared-kernels](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels): paquetes NuGet compartidos (`Access`, `Security`, `Integration`, `Observability`).
