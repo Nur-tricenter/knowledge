@@ -1,0 +1,147 @@
+# Catálogo de eventos de integración — Nur-Tricenter
+#
+# ESTADO: draft. Se generó a partir de lo que existe HOY en los repos:
+#   - Topología: Nur-tricenter/nur-tricenter-local → topology/rabbitmq-definitions.json
+#   - Contratos: Nur-tricenter/nur-tricenter-shared-kernels → nur-tricenter-integration/Messages/**
+# El documento oficial de eventos y contratos (en preparación por el grupo) reemplazará o
+# completará este archivo. Ver contracts/README.md.
+#
+# Convenciones (las valida `npm run validate`):
+#   - Un exchange por tipo de evento, nombre kebab-case, type fanout, durable false.
+#   - Una cola por consumidor y exchange, con nombre {consumidor}.{exchange} (p. ej. ms4.recipe-updated).
+#   - Cada servicio que consume un evento debe tener su cola en `queues` del exchange correspondiente.
+
+status: draft
+updated: 2026-10-23
+
+exchanges:
+  # ── Catálogo (MS2) ──────────────────────────────────────────────────────────
+  - name: food-published
+    publisher: ms2
+    contract: FoodPublished
+    namespace: Nur.Tricenter.Integration.Messages.Catalog
+    event_type: Food.Published
+    payload: [FoodId, Name, Category, Quantity, Calories, Protein, Fat, Carbs, UnitOfMeasure]
+    queues: [ms1.food-published, ms3.food-published, ms4.food-published, ms5.food-published]
+
+  - name: food-nutritional-info-updated
+    publisher: ms2
+    contract: FoodNutritionalInfoUpdated
+    namespace: Nur.Tricenter.Integration.Messages.Catalog
+    event_type: Food.NutritionalInfoUpdated
+    payload: [FoodId, PreviousCalories, PreviousProtein, PreviousFat, PreviousCarbs, NewCalories, NewProtein, NewFat, NewCarbs]
+    queues: [ms1.food-nutritional-info-updated, ms3.food-nutritional-info-updated, ms4.food-nutritional-info-updated, ms5.food-nutritional-info-updated]
+
+  - name: recipe-published
+    publisher: ms2
+    contract: RecipePublished
+    namespace: Nur.Tricenter.Integration.Messages.Catalog
+    event_type: Recipe.Published
+    payload: [RecipeId, Name, Instructions]
+    queues: [ms1.recipe-published, ms3.recipe-published, ms4.recipe-published, ms5.recipe-published]
+
+  - name: recipe-updated
+    publisher: ms2
+    contract: RecipeUpdated
+    namespace: Nur.Tricenter.Integration.Messages.Catalog
+    event_type: Recipe.Updated
+    payload: [RecipeId, Name, Instructions]
+    queues: [ms1.recipe-updated, ms3.recipe-updated, ms4.recipe-updated, ms5.recipe-updated]
+
+  - name: meal-plan-published
+    publisher: ms2
+    contract: MealPlanPublished
+    namespace: Nur.Tricenter.Integration.Messages.Catalog
+    event_type: MealPlan.Published
+    payload: [PlanId, Name, DurationType, TotalDays, MealsPerDay]
+    queues: [ms1.meal-plan-published, ms3.meal-plan-published, ms4.meal-plan-published, ms5.meal-plan-published]
+
+  # ── Identidad ───────────────────────────────────────────────────────────────
+  - name: user-published
+    publisher: identity
+    contract: UserPublished
+    namespace: Nur.Tricenter.Integration.Messages.Identity
+    event_type: User.Published
+    payload: [UserId, UserName, Email, IsAdministrator, Scopes]
+    queues: [ms1.user-published, ms2.user-published, ms3.user-published, ms4.user-published, ms5.user-published]
+
+  - name: user-updated
+    publisher: identity
+    contract: UserChanged
+    namespace: Nur.Tricenter.Integration.Messages.Identity
+    event_type: User.Changed
+    payload: [UserId, UserName, Email, Scopes, IsActive, ChangeKind]
+    queues: [ms1.user-updated, ms2.user-updated, ms3.user-updated, ms4.user-updated, ms5.user-updated]
+
+  # ── Logística (MS5) — publicados, pero SIN colas enlazadas en la topología todavía ──
+  - name: courier-created
+    publisher: ms5
+    contract: CourierCreated
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Courier.Created
+    queues: []
+
+  - name: courier-status-changed
+    publisher: ms5
+    contract: CourierStatusChanged
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Courier.StatusChanged
+    queues: []
+
+  - name: route-created
+    publisher: ms5
+    contract: RouteCreated
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Route.Created
+    queues: []
+
+  - name: courier-assigned-to-route
+    publisher: ms5
+    contract: CourierAssignedToRoute
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Route.CourierAssigned
+    queues: []
+
+  - name: delivery-added-to-route
+    publisher: ms5
+    contract: DeliveryAddedToRoute
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Route.DeliveryAdded
+    queues: []
+
+  - name: route-started
+    publisher: ms5
+    contract: RouteStarted
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Route.Started
+    queues: []
+
+  - name: route-completed
+    publisher: ms5
+    contract: RouteCompleted
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Route.Completed
+    queues: []
+
+  - name: route-cancelled
+    publisher: ms5
+    contract: RouteCancelled
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Route.Cancelled
+    queues: []
+
+  - name: delivery-completed
+    publisher: ms5
+    contract: DeliveryCompleted
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Delivery.Completed
+    payload: [DeliveryId, RouteId, DeliveredAt]
+    queues: []
+
+  - name: delivery-failed
+    publisher: ms5
+    contract: DeliveryFailed
+    namespace: Nur.Tricenter.Integration.Messages.Logistics
+    event_type: Delivery.Failed
+    payload: [DeliveryId, RouteId, Reason]
+    queues: []

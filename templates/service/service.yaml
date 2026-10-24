@@ -1,0 +1,73 @@
+# Ficha estructurada del microservicio. La valida `npm run validate` contra schema/service.schema.json.
+# La futura app visual lee ESTE archivo para dibujar el grafo de comunicación, así que:
+#   - Claves en inglés (no las cambies). Valores descriptivos en español.
+#   - Una lista vacía se escribe [] (no la borres): "no publico eventos" también es información.
+#   - Reemplaza cada TODO y cada <placeholder>. Mientras quede alguno, deja status: draft.
+# Ejemplo completo: services/ms4-delivery-calendar/service.yaml
+
+id: <msN>                      # ms1..ms9, identity o gateway. Debe coincidir con el prefijo de la carpeta.
+name: TODO Nombre del servicio
+owner:
+  name: TODO Nombre Apellido
+  github: <usuario-github>
+repo: Nur-tricenter/<nombre-del-repo>
+status: draft                  # draft | complete (complete = pasaste el checklist de CONTRIBUTING.md)
+summary: >-
+  TODO Una o dos frases: qué problema de negocio resuelve este servicio y para quién.
+stack: [TODO]                  # p. ej. [.NET 8, MediatR, EF Core, PostgreSQL]
+
+runtime:
+  consul_name: <nombre-consul>     # p. ej. catalog-service; null si no se registra en Consul
+  gateway_prefix: /api/<prefijo>   # = /api/{consul_name}; null si no está detrás del gateway
+  database: <nombre-bd>            # null si no tiene BD propia
+  workers: []                      # procesos aparte: p. ej. [outbox-worker, consumers]
+
+aggregates:
+  - name: TODO
+    description: TODO qué representa y qué invariante protege
+    states: []                     # opcional: estados de su máquina de estados
+
+# Lo que EXPONES. path sin el prefijo del gateway (tal como lo mapea el servicio).
+# callers: quién te llama → ms1..ms9 | identity | gateway | frontend | ops | external:<nombre>
+endpoints:
+  - method: GET
+    path: /api/v1/TODO
+    scope: TODO.recurso:read       # scope del kernel Nur.Tricenter.Access; null si es anónimo
+    callers: [frontend]
+    summary: TODO qué hace
+    idempotent: true
+
+# Lo que LLAMAS por HTTP (aristas síncronas). path tal como sale (con el prefijo del gateway si pasa por él).
+# auth: none | user-token | service-account:<cuenta>
+sync_calls: []
+#  - target: ms2
+#    method: GET
+#    path: /api/catalog/v1/meal-plans/{id}
+#    via: gateway
+#    auth: service-account:msN-service
+#    purpose: TODO para qué lo necesitas
+#    on_failure: TODO qué pasa si el otro servicio no responde
+
+# Eventos que PUBLICAS. El exchange tiene que existir en contracts/events.yaml.
+events_published: []
+#  - exchange: <exchange-kebab>
+#    contract: <RecordDelKernel>
+#    event_type: <Agregado.Evento>
+#    trigger: TODO qué acción de negocio lo dispara
+#    outbox: true
+
+# Eventos que CONSUMES. Cola = {tu-id}.{exchange}, tiene que estar en contracts/events.yaml.
+events_consumed: []
+#  - queue: msN.<exchange>
+#    exchange: <exchange>
+#    contract: <RecordDelKernel>
+#    handler: <ClaseConsumidora>
+#    effect: TODO qué cambia en tu servicio cuando llega
+#    idempotent: true
+
+# Deuda, inconsistencias y dependencias pendientes. Detalle en gaps.md.
+gaps: []
+#  - id: msN-gap-01
+#    summary: TODO
+#    severity: high               # high | medium | low
+#    blocked_by: ms5              # opcional: de quién depende resolverlo

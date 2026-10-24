@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Nur-tricenter/knowledge/schema/events.schema.json",
+  "title": "Catálogo de eventos de integración (contracts/events.yaml)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "exchanges"],
+  "properties": {
+    "status": { "enum": ["draft", "complete"] },
+    "updated": { "type": "string" },
+    "exchanges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "publisher", "contract", "event_type", "queues"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+          "publisher": { "type": "string", "pattern": "^(ms[1-9]|identity)$" },
+          "contract": { "type": "string" },
+          "namespace": { "type": "string" },
+          "event_type": { "type": "string", "pattern": "^[A-Z][A-Za-z]+\\.[A-Z][A-Za-z]+$" },
+          "payload": { "type": "array", "items": { "type": "string" } },
+          "queues": { "type": "array", "items": { "type": "string", "pattern": "^(ms[1-9]|identity)\\.[a-z0-9-]+$" } }
+        }
+      }
+    }
+  }
+}
