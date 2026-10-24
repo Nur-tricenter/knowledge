@@ -23,7 +23,7 @@ Contexto de **negocio y técnico** de toda la plataforma Nur-Tricenter, escrito 
 | MS1 — Pacientes | — | ⬜ sin empezar |
 | MS2 — Catálogo de planes y recetas | — | ⬜ sin empezar |
 | MS3 — Contratación y producción | — | ⬜ sin empezar |
-| MS4 — Calendario de entregas | Franklin Andre Romero Padilla | 🟨 en curso |
+| MS4 — Calendario de entregas | Franklin Andre Romero Padilla | ✅ [completa](./services/ms4-delivery-calendar/README.md) |
 | MS5 — Logística y entregas | — | ⬜ sin empezar |
 | Identity | — | ⬜ sin empezar |
 | API Gateway | — | ⬜ sin empezar |

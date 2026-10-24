@@ -19,7 +19,7 @@ Cada paso pertenece a un microservicio distinto, y el foco del diplomado está e
 | MS1 | Pacientes (clínica) | Registro del paciente, datos clínicos y de contacto | _sin repo en la org_ | pendiente |
 | MS2 | Catálogo de planes y recetas | Alimentos, recetas y planes nutricionales por número de día | [ms2-plans-and-recipes-catalog](https://github.com/Nur-tricenter/ms2-plans-and-recipes-catalog) | pendiente |
 | MS3 | Contratación y producción | Contrato, pago y orden de producción diaria | _sin repo en la org_ | pendiente |
-| MS4 | Calendario de entregas | Calendario por paciente, reglas de cambio (48h), orden de producción consolidada | [ms4-delivery-schedule-management](https://github.com/Nur-tricenter/ms4-delivery-schedule-management) | en curso |
+| MS4 | Calendario de entregas | Calendario por paciente, reglas de cambio (48h), orden de producción consolidada | [ms4-delivery-schedule-management](https://github.com/Nur-tricenter/ms4-delivery-schedule-management) | [completa](../services/ms4-delivery-calendar/README.md) |
 | MS5 | Logística y entregas | Repartidores, rutas y resultado de cada entrega | [ms5-logistics-and-delivery](https://github.com/Nur-tricenter/ms5-logistics-and-delivery) | pendiente |
 | — | Identity | Usuarios, scopes y emisión de JWT | [nur-tricenter-identity](https://github.com/Nur-tricenter/nur-tricenter-identity) | pendiente |
 | — | API Gateway | Punto de entrada único, ruteo dinámico vía Consul | [nur-tricenter-api-gateway](https://github.com/Nur-tricenter/nur-tricenter-api-gateway) | pendiente |
