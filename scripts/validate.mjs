@@ -17,8 +17,11 @@ const errors = [];
 const warnings = [];
 
 const load = (rel) => parse(readFileSync(join(root, rel), 'utf8'));
+// Un validador compilado por schema: Ajv rechaza compilar dos veces el mismo $id.
+const compiled = new Map();
 const check = (schemaRel, data, label) => {
-  const validate = ajv.compile(JSON.parse(readFileSync(join(root, schemaRel), 'utf8')));
+  if (!compiled.has(schemaRel)) compiled.set(schemaRel, ajv.compile(JSON.parse(readFileSync(join(root, schemaRel), 'utf8'))));
+  const validate = compiled.get(schemaRel);
   if (!validate(data)) {
     for (const e of validate.errors) errors.push(`${label}: ${e.instancePath || '(raíz)'} ${e.message}`);
   }
@@ -49,7 +52,8 @@ for (const { name: folder } of folders) {
   seenIds.add(svc.id);
 
   const raw = readFileSync(join(root, rel), 'utf8');
-  if (/TODO|<[a-z-]+>/i.test(raw)) {
+  // Case-sensitive a propósito: /TODO/i daría falso positivo con "todos" en español.
+  if (/\bTODO\b|<[a-zA-Z][a-zA-Z-]*>/.test(raw)) {
     (svc.status === 'complete' ? errors : warnings).push(`${rel}: quedan marcadores TODO o <placeholder>`);
   }
 
