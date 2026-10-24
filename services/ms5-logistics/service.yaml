@@ -1,0 +1,191 @@
+# Ficha estructurada de MS5. Fuente: código de Nur-tricenter/ms5-logistics-and-delivery (2026-10-24).
+
+id: ms5
+name: Logística y entregas (Logistics and Delivery)
+owner:
+  name: Andres Sebastian Guerrero Camacho
+  github: DruGuerrero
+repo: Nur-tricenter/ms5-logistics-and-delivery
+status: complete
+summary: >-
+  Última milla de la plataforma: registra repartidores, arma la ruta del día de cada uno, ordena las
+  paradas desde la sucursal y registra cada entrega (foto y firma) o su fallo. Publica 10 eventos de
+  logística vía outbox; no consume eventos y hoy no avisa el resultado a MS4.
+stack: [.NET 10, Clean Architecture, DDD (Joseco.DDD.Core), Ardalis.ApiEndpoints, MediatR, FluentValidation, EF Core, PostgreSQL (Neon), RabbitMQ (Joseco), Consul]
+
+runtime:
+  consul_name: nurtricenter
+  gateway_prefix: /api/nurtricenter
+  database: neondb (Neon, fuera del Postgres de la plataforma)
+  workers: [nurtricenter-workerservice]
+
+aggregates:
+  - name: Route
+    description: Raíz del agregado. Ruta de un repartidor (CourierId) en una fecha, con sus Delivery. Solo se inicia con entregas y solo se completa cuando todas son terminales.
+    states: [Pending, InProgress, Completed, Cancelled]
+  - name: Delivery
+    description: Entidad hija de Route. Un paquete (ValidatedPackage) a entregar en una dirección, con su secuencia, confirmación (foto, firma, momento) o motivo de fallo.
+    states: [Pending, InProgress, Delivered, Failed]
+  - name: Courier
+    description: Entidad independiente (no AggregateRoot) con repositorio propio. Repartidor con nombre y estado; ningún caso de uso le cambia el estado.
+    states: [Available, OnRoute, OnBreak]
+
+endpoints:
+  - method: POST
+    path: /api/v1/couriers
+    scope: null
+    callers: [ops]
+    summary: Crea un repartidor en Available y publica courier-created. Anónimo.
+    idempotent: false
+  - method: POST
+    path: /api/v1/routes
+    scope: null
+    callers: [ops]
+    summary: Crea la ruta Pending de un repartidor existente para una fecha (no pasada) y publica route-created. Anónimo.
+    idempotent: false
+  - method: POST
+    path: /api/v1/packages/deliveries
+    scope: null
+    callers: [ms3]
+    summary: Recibe un array de paquetes, valida los pacientes en MS1 y los agrega a la ruta de hoy más reciente. Hoy nadie lo llama; MS3 lo reemplazará por un evento (sin contrato aún). Anónimo.
+    idempotent: false
+  - method: GET
+    path: /api/v1/couriers/{courierId}/route/today
+    scope: null
+    callers: [frontend]
+    summary: Ruta de hoy del repartidor con secuencia, dirección, estado y nombre del paciente (pedido a ClinicService). Anónimo.
+    idempotent: true
+  - method: POST
+    path: /api/v1/routes/{routeId}/start
+    scope: null
+    callers: [frontend]
+    summary: Calcula la secuencia (vecino más cercano desde la sucursal) y pasa la ruta y sus entregas a InProgress. Publica route-started. Anónimo.
+    idempotent: false
+  - method: POST
+    path: /api/v1/routes/{routeId}/deliveries/{deliveryId}/deliver
+    scope: null
+    callers: [frontend]
+    summary: Registra la entrega con foto, firma y momento. Publica delivery-completed y, si era la última, route-completed. No avisa a MS4. Anónimo.
+    idempotent: false
+  - method: POST
+    path: /api/v1/routes/{routeId}/deliveries/{deliveryId}/fail
+    scope: null
+    callers: [frontend]
+    summary: Registra la entrega fallida con su motivo. Publica delivery-failed y, si era la última, route-completed. Anónimo.
+    idempotent: false
+  - method: GET
+    path: /health
+    scope: null
+    callers: [external:consul]
+    summary: Health check anónimo para Consul; incluye Postgres (503 si cae) solo cuando el registro en Consul está habilitado.
+    idempotent: true
+
+sync_calls:
+  - target: ms1
+    method: POST
+    path: /api/v1/patients/contact-information
+    via: direct
+    auth: none
+    purpose: Validar que los pacientes de un lote existen y obtener su nombre (ClinicService de MS1). Hoy apunta a un mock de Postman, no al MS1 real ni al gateway.
+    on_failure: Sin reintentos ni timeout propio. No-2xx → 422 ClinicService.RequestFailed; timeout → 500. Sin degradación, falla también GET route/today.
+
+events_published:
+  - exchange: courier-created
+    contract: CourierCreated
+    event_type: Courier.Created
+    trigger: Se crea un repartidor (POST /couriers).
+    outbox: true
+  - exchange: courier-status-changed
+    contract: CourierStatusChanged
+    event_type: Courier.StatusChanged
+    trigger: Courier.SetStatus con otro estado. Sin invocador hoy (ms5-gap-07).
+    outbox: true
+  - exchange: route-created
+    contract: RouteCreated
+    event_type: Route.Created
+    trigger: Se crea una ruta (POST /routes).
+    outbox: true
+  - exchange: courier-assigned-to-route
+    contract: CourierAssignedToRoute
+    event_type: Route.CourierAssigned
+    trigger: Route.AssignCourier. Sin endpoint hoy (ms5-gap-07).
+    outbox: true
+  - exchange: delivery-added-to-route
+    contract: DeliveryAddedToRoute
+    event_type: Route.DeliveryAdded
+    trigger: Se agrega un paquete a la ruta de hoy (POST /packages/deliveries), uno por ítem.
+    outbox: true
+  - exchange: route-started
+    contract: RouteStarted
+    event_type: Route.Started
+    trigger: El repartidor inicia la ruta (POST /routes/{routeId}/start).
+    outbox: true
+  - exchange: route-completed
+    contract: RouteCompleted
+    event_type: Route.Completed
+    trigger: La última entrega abierta de una ruta InProgress pasa a Delivered o Failed (automático, en el mismo commit).
+    outbox: true
+  - exchange: route-cancelled
+    contract: RouteCancelled
+    event_type: Route.Cancelled
+    trigger: Route.CancelRoute. Sin endpoint hoy (ms5-gap-07).
+    outbox: true
+  - exchange: delivery-completed
+    contract: DeliveryCompleted
+    event_type: Delivery.Completed
+    trigger: Entrega exitosa (POST …/deliver). Payload sin PackageId ni evidencia.
+    outbox: true
+  - exchange: delivery-failed
+    contract: DeliveryFailed
+    event_type: Delivery.Failed
+    trigger: Entrega fallida (POST …/fail) o cada entrega abierta al cancelar una ruta.
+    outbox: true
+
+events_consumed: []
+
+gaps:
+  - id: ms5-gap-01
+    summary: Sin autenticación ni scopes logistics.* en el kernel; todos los endpoints son anónimos, también vía gateway.
+    severity: high
+  - id: ms5-gap-02
+    summary: No informa el resultado de la entrega a MS4 (ni PATCH delivery-result ni evento consumible); MS5 no conoce el dayId de MS4.
+    severity: high
+    blocked_by: ms4
+  - id: ms5-gap-03
+    summary: Nadie llama a POST /packages/deliveries y el evento de MS3 con los paquetes producidos (decidido) no existe en el kernel.
+    severity: high
+    blocked_by: ms3
+  - id: ms5-gap-04
+    summary: Los 10 exchanges no tienen colas de consumidor; solo el sink nurtricenter.default los recibe.
+    severity: medium
+  - id: ms5-gap-05
+    summary: ClinicService es un mock de Postman llamado directo, sin token ni resiliencia; si cae, el repartidor no ve su ruta.
+    severity: medium
+    blocked_by: ms1
+  - id: ms5-gap-06
+    summary: Los paquetes van a la ruta de hoy más reciente de cualquier repartidor; sin unicidad por PackageId ni por (CourierId, fecha).
+    severity: medium
+  - id: ms5-gap-07
+    summary: AssignCourier, CancelRoute y SetStatus no tienen endpoint; 3 eventos nunca se publican y el repartidor nunca cambia de estado.
+    severity: medium
+  - id: ms5-gap-08
+    summary: Registrar la última entrega de una ruta no iniciada devuelve 422 (Route.CannotComplete) y revierte la entrega.
+    severity: medium
+  - id: ms5-gap-09
+    summary: Los comandos no son idempotentes; un reintento da 422 (start, deliver, fail) o duplica (altas).
+    severity: medium
+  - id: ms5-gap-10
+    summary: '"Hoy" se calcula con DateTime.Today (hora local del proceso, UTC en contenedor).'
+    severity: low
+  - id: ms5-gap-11
+    summary: No hay GET de repartidor ni de ruta por id; los Location de los 201 apuntan a rutas inexistentes.
+    severity: low
+  - id: ms5-gap-12
+    summary: Siete colas ms5.* declaradas en la topología sin consumidor.
+    severity: low
+  - id: ms5-gap-13
+    summary: Sin Nur.Tricenter.Observability ni exportador OpenTelemetry; la correlación solo se ve en logs.
+    severity: low
+  - id: ms5-gap-14
+    summary: Enums como número en dos respuestas y como texto en las demás; un test de integración no prueba lo que dice su nombre.
+    severity: low

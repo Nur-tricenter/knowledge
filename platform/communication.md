@@ -116,8 +116,10 @@ Fuente: el código de cada repo a la fecha. La futura app visual la va a generar
 | MS3 → MS4 | REST | `POST /schedule`, `GET /calendars/active-tomorrow` | MS4 lo expone; MS3 sin repo |
 | Frontend → MS4 | REST | direcciones, reprogramar, cancelar, consultar | MS4 lo expone; frontend sin repo |
 | MS4 → MS2 | REST + service account | `GET /api/catalog/v1/meal-plans/{id}` | funcionando |
-| MS5 → MS4 | REST | `PATCH /delivery-result` | **MS5 no lo llama todavía** |
-| MS5 → ClinicService | REST | `GET /patients/contact-information` | contra un mock de Postman |
+| MS5 → MS4 | REST | `PATCH /delivery-result` | **MS5 no lo llama todavía** (X-01) |
+| MS3 → MS5 | evento (decidido) | paquetes producidos; hoy la única entrada es `POST /packages/deliveries`, que nadie llama | **sin contrato en el kernel ni código** (X-10) |
+| Operaciones / app repartidor → MS5 | REST | repartidores, rutas, iniciar, entregar, fallar | MS5 lo expone **sin autenticación** (X-03); sin clientes en la org |
+| MS5 → ClinicService | REST directo, sin token | `POST /api/v1/patients/contact-information` | contra un mock de Postman |
 | MS2 → todos | eventos | food/recipe/meal-plan (5 exchanges) | publicado; MS4 consume 2 |
 | Identity → todos | eventos | user-published, user-updated | publicado; MS2 consume 1 |
-| MS5 → ? | eventos | 10 exchanges de logística | **sin colas enlazadas** |
+| MS5 → ? | eventos | 10 exchanges de logística | publicado (7 alcanzables); **sin colas de consumidor**, solo el sink `nurtricenter.default` |

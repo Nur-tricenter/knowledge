@@ -8,21 +8,21 @@ Esta página conecta **cada concepto del módulo** con **dónde se ve en el proy
 
 | # | Concepto | Qué es | Evidencia en el proyecto |
 |---|---|---|---|
-| 1 | API Gateway | Punto de entrada único que oculta la topología interna | `nur-tricenter-api-gateway`: YARP + Consul, `/api/{servicio}/**` |
-| 2 | Service discovery | Encontrar instancias sanas sin IPs fijas | Auto-registro en Consul + health check `/health` (MS2, MS4, identity) |
-| 3 | Comunicación síncrona (REST) | Petición/respuesta, acoplamiento temporal | MS3 → MS4 `POST /schedule`; MS4 → MS2 `GET /meal-plans/{id}` |
-| 4 | Comunicación asíncrona (eventos) | Publicar hechos sin conocer a los consumidores | MS2 publica 5 eventos (`food-published`, `food-nutritional-info-updated`, `recipe-published`, `recipe-updated`, `meal-plan-published`) y MS4 consume 2 |
-| 5 | Pub/Sub con fanout | Cada consumidor recibe su copia | Colas `{msN}.{exchange}` en `rabbitmq-definitions.json` |
-| 6 | Contratos compartidos | Esquema común de mensajes | Kernel `Nur.Tricenter.Integration` |
-| 7 | Transactional outbox | No perder eventos entre la BD y el broker | `Joseco.Outbox.EFCore` en MS2, identity y MS5; MS2 drena el outbox en `catalog-workerservice` y proyecta al read model |
+| 1 | API Gateway | Punto de entrada único que oculta la topología interna | `nur-tricenter-api-gateway`: YARP + Consul, `/api/{servicio}/**`; MS5 entra como `/api/nurtricenter/v1/...` |
+| 2 | Service discovery | Encontrar instancias sanas sin IPs fijas | Auto-registro en Consul + health check `/health` (MS2, MS4, identity, MS5). MS5: registro opt-in que nunca tumba el servicio (3 reintentos con backoff) y `/health` con chequeo de Postgres que saca la instancia del gateway si cae la BD |
+| 3 | Comunicación síncrona (REST) | Petición/respuesta, acoplamiento temporal | MS3 → MS4 `POST /schedule`; MS4 → MS2 `GET /meal-plans/{id}`; MS5 → ClinicService `POST /api/v1/patients/contact-information` (directo, contra un mock: contraejemplo de acoplamiento temporal, si cae el repartidor no ve su ruta) |
+| 4 | Comunicación asíncrona (eventos) | Publicar hechos sin conocer a los consumidores | MS2 publica 5 eventos (`food-published`, `food-nutritional-info-updated`, `recipe-published`, `recipe-updated`, `meal-plan-published`) y MS4 consume 2; MS5 publica 10 (`courier-*`, `route-*`, `delivery-*`) que nadie consume todavía |
+| 5 | Pub/Sub con fanout | Cada consumidor recibe su copia | Colas `{msN}.{exchange}` en `rabbitmq-definitions.json`; sinks de historial nunca consumidos `catalog.default` (MS2) y `nurtricenter.default` (MS5) |
+| 6 | Contratos compartidos | Esquema común de mensajes | Kernel `Nur.Tricenter.Integration` (MS5: `Messages.Logistics`, 10 contratos) |
+| 7 | Transactional outbox | No perder eventos entre la BD y el broker | `Joseco.Outbox.EFCore` en MS2, identity y MS5; MS2 drena el outbox en `catalog-workerservice` y proyecta al read model; MS5: el `UnitOfWork` drena los eventos de dominio **antes** de `SaveChanges` para que agregado y fila de outbox entren en la misma transacción, y `Nurtricenter.WorkerService` publica |
 | 8 | Inbox / consumidor idempotente | Tolerar la entrega at-least-once | `IdempotentConsumer` + tabla `InboxMessages` (MS4, MS2) |
-| 9 | Idempotencia en APIs | Reintentos sin efectos duplicados | MS4 `POST /schedule` por `contractId`; `PATCH /delivery-result` |
+| 9 | Idempotencia en APIs | Reintentos sin efectos duplicados | MS4 `POST /schedule` por `contractId`; `PATCH /delivery-result`. Contraejemplo: en MS5 repetir `deliver`/`fail`/`start` da 422 y las altas duplican |
 | 10 | Consistencia eventual | Copias locales que convergen | MS4 `PlanCatalog`, MS2 `PlanAuthors` |
-| 11 | Database per service | Cada servicio dueño de sus datos | Una BD por servicio en el Postgres compartido |
+| 11 | Database per service | Cada servicio dueño de sus datos | Una BD por servicio en el Postgres compartido; MS5 usa su propia BD en Neon |
 | 12 | Autenticación servicio a servicio | Identidad de máquina con mínimo privilegio | Service account `ms4-service` → MS2 |
 | 13 | Autorización por scopes | Permiso por endpoint | Kernel `Nur.Tricenter.Access` + `RequireAuthorization` |
-| 14 | Resiliencia | Reintentos, timeouts, degradación | MS4: si MS2 cae, el día queda en `Scheduled` y el job se re-ejecuta |
-| 15 | Trazabilidad distribuida | Seguir una operación entre servicios | `CorrelationId` + `TracingConsumer` + OpenTelemetry; MS2 estampa el outbox con `OutboxTracingService` y re-adjunta el span en `TracingConsumer` |
+| 14 | Resiliencia | Reintentos, timeouts, degradación | MS4: si MS2 cae, el día queda en `Scheduled` y el job se re-ejecuta. MS5: el registro en Consul y la declaración de su cola sink reintentan sin tumbar el proceso; el outbox reintenta lo no publicado |
+| 15 | Trazabilidad distribuida | Seguir una operación entre servicios | `CorrelationId` + `TracingConsumer` + OpenTelemetry; MS2 estampa el outbox con `OutboxTracingService` y re-adjunta el span en `TracingConsumer`; MS5 estampa el trace id en la fila del outbox y lo recupera en el worker con `OutboxCorrelation.Resolve` (sin exportador OTel) |
 | 16 | Query vs evento (trade-off) | Elegir el estilo según la necesidad | `GET /active-tomorrow` reemplazó al evento `ProductionOrderRequired`; MS4 consulta `GET /meal-plans/{id}` a MS2 porque `meal-plan-published` no trae la composición |
 | 17 | Contenedores y orquestación local | Levantar N servicios juntos | `nur-tricenter-local`: compose con `include:` por servicio |
 

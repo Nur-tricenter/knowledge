@@ -12,7 +12,7 @@
 #   - Cada servicio que consume un evento debe tener su cola en `queues` del exchange correspondiente.
 
 status: draft
-updated: 2026-10-23
+updated: 2026-10-24
 
 exchanges:
   # ── Catálogo (MS2) ──────────────────────────────────────────────────────────
@@ -73,12 +73,16 @@ exchanges:
     payload: [UserId, UserName, Email, Scopes, IsActive, ChangeKind]
     queues: [ms1.user-updated, ms2.user-updated, ms3.user-updated, ms4.user-updated, ms5.user-updated]
 
-  # ── Logística (MS5) — publicados, pero SIN colas enlazadas en la topología todavía ──
+  # ── Logística (MS5) — publicados vía outbox, pero SIN colas de consumidor en la topología ──
+  # El worker de MS5 declara además el sink nurtricenter.default (durable, nunca consumido),
+  # enlazado a estos 10 exchanges. No figura en queues porque no es una cola de consumidor.
+  # Fuente del payload: nur-tricenter-shared-kernels → Messages/Logistics (Nur.Tricenter.Integration 1.1.0).
   - name: courier-created
     publisher: ms5
     contract: CourierCreated
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Courier.Created
+    payload: [CourierId, FullName, Status]
     queues: []
 
   - name: courier-status-changed
@@ -86,6 +90,7 @@ exchanges:
     contract: CourierStatusChanged
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Courier.StatusChanged
+    payload: [CourierId, OldStatus, NewStatus]
     queues: []
 
   - name: route-created
@@ -93,6 +98,7 @@ exchanges:
     contract: RouteCreated
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Route.Created
+    payload: [RouteId, CourierId, ScheduledDate]
     queues: []
 
   - name: courier-assigned-to-route
@@ -100,6 +106,7 @@ exchanges:
     contract: CourierAssignedToRoute
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Route.CourierAssigned
+    payload: [RouteId, CourierId]
     queues: []
 
   - name: delivery-added-to-route
@@ -107,6 +114,7 @@ exchanges:
     contract: DeliveryAddedToRoute
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Route.DeliveryAdded
+    payload: [RouteId, DeliveryId, PackageId, PatientId]
     queues: []
 
   - name: route-started
@@ -114,6 +122,7 @@ exchanges:
     contract: RouteStarted
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Route.Started
+    payload: [RouteId]
     queues: []
 
   - name: route-completed
@@ -121,6 +130,7 @@ exchanges:
     contract: RouteCompleted
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Route.Completed
+    payload: [RouteId]
     queues: []
 
   - name: route-cancelled
@@ -128,6 +138,7 @@ exchanges:
     contract: RouteCancelled
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Route.Cancelled
+    payload: [RouteId]
     queues: []
 
   - name: delivery-completed
