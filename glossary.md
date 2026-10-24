@@ -12,11 +12,14 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | Porción (`Portion`) | Cantidad de un ingrediente dentro de una receta (decimal) | MS2 |
 | Ración (`Ration`) | Cantidad de una receta dentro de un tiempo de comida (entero) | MS2 |
 | `PlanAuthors` | Read model local de MS2 con los datos del autor del plan, proyectado desde `user-published` | MS2 |
-| Contrato | Compra de un plan por un paciente; origina el calendario | MS3 |
+| Contrato | Compra de un plan por un paciente; al pagarse, MS3 pide el calendario a MS4 | MS3 |
 | Calendario de entregas | Secuencia de días de entrega de un paciente, uno por día del plan | MS4 |
 | Día de entrega (`DeliveryDay`) | Una entrega concreta: fecha, dirección, menú, estado y evidencia | MS4 |
 | Regla de 48h | No se puede reprogramar ni cancelar un día a menos de 48h de su fecha | MS4 |
 | Orden de producción | Foto consolidada de todo lo que hay que producir para una fecha | MS4 (la consume MS3) |
+| Orden de producción diaria (MS3) | Recetas y raciones totales que la cocina produce un día, armada con el menú de cada entrega de MS4. No es la orden de producción de MS4 | MS3 |
+| Paquete | Entrega física en producción: se arma, se etiqueta y pasa control de calidad antes de liberarse a logística | MS3 |
+| Service account | Usuario técnico para llamadas servicio a servicio con el mínimo de scopes (`ms3-service`, `ms4-service`) | identity |
 | Ruta | Conjunto de entregas asignadas a un repartidor en un día | MS5 |
 | Repartidor (courier) | Persona que ejecuta la ruta | MS5 |
 | Entrega / parada (`Delivery`) | Un paquete a llevar a una dirección dentro de una ruta. Entidad hija de la ruta en MS5; no confundir con el `DeliveryDay` de MS4 | MS5 |

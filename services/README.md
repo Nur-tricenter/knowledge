@@ -6,7 +6,7 @@ Una carpeta por microservicio, creada a partir de [`templates/service/`](../temp
 |---|---|---|---|
 | MS1 | _pendiente_ | — | ⬜ sin empezar |
 | MS2 | [`ms2-catalog`](./ms2-catalog/README.md) | Robert Perez Lino | ✅ `status: complete` |
-| MS3 | _pendiente_ | — | ⬜ sin empezar |
+| MS3 | [`ms3-contracting`](./ms3-contracting/README.md) | Luis Jesus Ferrufino | ✅ `status: complete` |
 | MS4 | [`ms4-delivery-calendar`](./ms4-delivery-calendar/README.md) | Franklin Andre Romero Padilla | ✅ complete |
 | MS5 | [`ms5-logistics`](./ms5-logistics/README.md) | Andres Sebastian Guerrero Camacho | ✅ complete |
 | identity | _pendiente_ (sugerida: `identity-service`) | — | ⬜ sin empezar |

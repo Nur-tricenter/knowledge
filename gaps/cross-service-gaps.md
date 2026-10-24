@@ -1,20 +1,21 @@
 # Gaps transversales
 
 Problemas que involucran **a más de un servicio**. Los gaps internos de cada MS van en `services/<ms>/gaps.md`.
-Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07 y X-10 revisados el 2026-10-24 con la ficha de MS5. Al resolver uno, márcalo como cerrado e indica el PR.
+Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07, X-10 y X-11 revisados el 2026-10-24 con la ficha de MS5. Al resolver uno, márcalo como cerrado e indica el PR.
 
 | Id | Gap | Severidad | Servicios | Estado |
 |---|---|---|---|---|
 | X-01 | MS5 no llama a `PATCH /delivery-result` de MS4 | high | MS5, MS4 | abierto |
 | X-02 | Los 10 exchanges de logística no tienen colas enlazadas | medium | MS5, consumidores | abierto |
 | X-03 | MS5 no valida JWT ni tiene scopes en el kernel | high | MS5, kernels | abierto |
-| X-04 | No hay repos de MS1 ni de MS3 en la org | high | MS1, MS3 | abierto |
+| X-04 | No hay repo de MS1 en la org (y MS3 usa pacientes simulados) | high | MS1, MS3 | abierto |
 | X-05 | La ruta de identity en el gateway está documentada de dos formas | low | identity, kernels | abierto |
 | X-06 | Hay colas declaradas sin consumidor | low | todos | abierto |
 | X-07 | Versiones mezcladas de los kernels | medium | todos | abierto |
 | X-08 | Sin autorización por objeto (no existe mapeo `sub` → `PatientId`) | high | identity, MS1, MS4 | abierto |
 | X-09 | Tabla maestra de endpoints desactualizada o fuera de los repos | low | todos | abierto |
-| X-10 | Nadie entrega los paquetes producidos a MS5 (`POST /packages/deliveries` sin llamador; el evento de MS3 decidido no existe) | high | MS3, MS5, kernels | abierto |
+| X-10 | MS5 no consume el evento `package-validated` de MS3 (`POST /packages/deliveries` sin llamador) | high | MS5, MS3 | abierto |
+| X-11 | MS3 no valida JWT ni tiene scopes en el kernel | high | MS3, kernels | abierto |
 
 ## Detalle
 
@@ -37,8 +38,8 @@ MS5 solo llama a `AddAuthorization()`, sin `AddSecurity()` del kernel, y no exis
 
 **Confirmado por MS5 (2026-10-24):** ningún endpoint tiene `RequireAuthorization` ni `[Authorize]`; a través del gateway cualquiera puede crear repartidores y rutas, cargar paquetes y cerrar entregas. MS5 tampoco tiene service account (su única llamada saliente va sin token).
 
-### X-04 — MS1 y MS3 sin repo
-Los demás los referencian (MS3 llama a MS4; hay colas `ms1.*` y `ms3.*`), pero el código no está en la org. MS5 llama a un "ClinicService", que es MS1 (confirmado por el owner de MS5), contra un mock de Postman: `POST /api/v1/patients/contact-information` con un array de `patientId` (texto), respuesta `[{ patientId, phoneNumber, fullName }]`, **directo** (sin gateway) y sin token. Ese contrato lo definió MS5 y no está en ningún kernel; el MS1 real tendría que respetarlo o MS5 adaptarse.
+### X-04 — MS1 sin repo
+Los demás lo referencian (hay colas `ms1.*`), pero el código no está en la org. MS3 ya tiene repo; mientras MS1 no exista, MS3 trabaja con 3 pacientes simulados. MS5 llama a un "ClinicService", que es MS1 (confirmado por el owner de MS5), contra un mock de Postman: `POST /api/v1/patients/contact-information` con un array de `patientId` (texto), respuesta `[{ patientId, phoneNumber, fullName }]`, **directo** (sin gateway) y sin token. Ese contrato lo definió MS5 y no está en ningún kernel; el MS1 real tendría que respetarlo o MS5 adaptarse.
 
 ### X-05 — Ruta de identity
 El gateway arma el prefijo con el nombre en Consul (`identity-service`) → `/api/identity-service/**`, que es lo que usa MS4. El README de identity y el `Base` de `IdentityPermission` en el kernel dicen `/api/identity`.
@@ -60,6 +61,9 @@ MS5 expone `POST /api/v1/packages/deliveries` (array de `{ patientId, packageDet
 
 **Impacto:** en la plataforma ningún paquete llega solo a una ruta; el flujo de punta a punta se corta entre la producción y el reparto.
 
-**Decisión (owner de MS5, 2026-10-24):** MS3 publica un **evento** con los paquetes producidos y MS5 lo consume; `POST /packages/deliveries` queda como entrada manual. **Pendiente:** el contrato en `Nur.Tricenter.Integration` (aún no existe), su exchange y la cola `ms5.*` en `nur-tricenter-local`, el publisher en MS3 (sin repo, X-04) y el consumidor idempotente en MS5. Cuando el contrato exista, se agrega a `contracts/events.yaml`.
+**Decisión (owner de MS5, 2026-10-24):** MS3 publica un **evento** con los paquetes producidos y MS5 lo consume; `POST /packages/deliveries` queda como entrada manual. **Hecho por MS3 (2026-10-24):** el contrato `PackageValidated` (kernel, rama `feat/contracting-messages`, 1.2.0 sin publicar), el exchange `package-validated` y la cola `ms5.package-validated` (rama `feat/ms3-contracting` de `nur-tricenter-local`) y el publisher vía outbox. Ya figura en `contracts/events.yaml`. **Pendiente:** el consumidor idempotente en MS5, que `PackageId` sea el `packId` de MS4 (ver `ms3-gap-03`: hoy es el id del paquete de MS3) y que MS5 acepte coordenadas nulas o las calcule.
 
 El `packageId` del evento tendría que ser el `packId` de MS4: eso destraba también X-01. Hay que alinear tipos: MS5 usa `string` para `patientId`, MS4 usa `Guid`.
+
+### X-11 — MS3 sin autenticación
+Ningún endpoint de MS3 usa `RequireAuthorization` y no tiene permisos en `Nur.Tricenter.Access`. Cualquiera puede, a través del gateway, contratar, cobrar, cancelar y validar paquetes. Es el mismo problema de MS5 (X-03), con más riesgo porque MS3 mueve dinero. Detalle y qué haría falta: `ms3-gap-01`.

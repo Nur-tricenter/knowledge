@@ -22,7 +22,7 @@ Contexto de **negocio y técnico** de toda la plataforma Nur-Tricenter, escrito 
 |---|---|---|
 | MS1 — Pacientes | — | ⬜ sin empezar |
 | MS2 — Catálogo de planes y recetas | Robert Perez Lino | ✅ [complete](./services/ms2-catalog/README.md) |
-| MS3 — Contratación y producción | — | ⬜ sin empezar |
+| MS3 — Contratación y producción | Luis Jesus Ferrufino | ✅ [complete](./services/ms3-contracting/README.md) |
 | MS4 — Calendario de entregas | Franklin Andre Romero Padilla | ✅ [completa](./services/ms4-delivery-calendar/README.md) |
 | MS5 — Logística y entregas | Andres Sebastian Guerrero Camacho | ✅ [complete](./services/ms5-logistics/README.md) |
 | Identity | — | ⬜ sin empezar |
