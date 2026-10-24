@@ -5,7 +5,7 @@ Una carpeta por microservicio, creada a partir de [`templates/service/`](../temp
 | Id | Carpeta | Owner | Estado |
 |---|---|---|---|
 | MS1 | _pendiente_ | — | ⬜ sin empezar |
-| MS2 | _pendiente_ (sugerida: `ms2-catalog`) | — | ⬜ sin empezar |
+| MS2 | [`ms2-catalog`](./ms2-catalog/README.md) | Robert Perez Lino | ✅ `status: complete` |
 | MS3 | _pendiente_ | — | ⬜ sin empezar |
 | MS4 | [`ms4-delivery-calendar`](./ms4-delivery-calendar/README.md) | Franklin Andre Romero Padilla | ✅ complete |
 | MS5 | _pendiente_ (sugerida: `ms5-logistics`) | — | ⬜ sin empezar |
