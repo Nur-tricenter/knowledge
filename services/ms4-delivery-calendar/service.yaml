@@ -1,0 +1,138 @@
+# Ficha estructurada de MS4. Fuente: código de Nur-tricenter/ms4-delivery-schedule-management (2026-10-23).
+
+id: ms4
+name: Calendario de entregas (Delivery Calendar)
+owner:
+  name: Franklin Andre Romero Padilla
+  github: franklin-andre
+repo: Nur-tricenter/ms4-delivery-schedule-management
+status: complete
+summary: >-
+  Convierte un plan nutricional contratado (15 o 30 días) en un calendario de entregas diarias por
+  paciente. Gestiona dirección, menú y estado de cada día, aplica la regla de 48h y consolida la
+  orden de producción del día siguiente que consume MS3.
+stack: [.NET 10, .NET Aspire, Minimal APIs, MediatR, EF Core, PostgreSQL, RabbitMQ (Joseco)]
+
+runtime:
+  consul_name: delivery-calendar
+  gateway_prefix: /api/delivery-calendar
+  database: ms4_delivery_calendar
+  workers: [delivery-calendar-workerservice, delivery-calendar-migrate]
+
+aggregates:
+  - name: DeliveryCalendar
+    description: Calendario de un paciente para un contrato. Raíz; contiene los DeliveryDay. Único por contractId.
+    states: [Active, Completed]
+  - name: DeliveryDay
+    description: Entidad dentro de DeliveryCalendar. Una entrega concreta con fecha, número de día del plan, dirección, menú y evidencia.
+    states: [Pending, Scheduled, ReadyForProduction, InProduction, Delivered, Failed, Cancelled]
+  - name: ProductionOrder
+    description: Foto consolidada de todos los días listos para una fecha de entrega. Única por fecha.
+    states: [Generated]
+
+endpoints:
+  - method: POST
+    path: /api/v1/schedule
+    scope: deliveryCalendar.calendar:create
+    callers: [ms3]
+    summary: Crea el calendario de un contrato con N días en Pending. Repetir con el mismo contractId devuelve el existente.
+    idempotent: true
+  - method: GET
+    path: /api/v1/calendars/active-tomorrow
+    scope: deliveryCalendar.productionOrder:read
+    callers: [ms3]
+    summary: Orden de producción consolidada de mañana (o de ?date=). Lista vacía si el job no corrió.
+    idempotent: true
+  - method: GET
+    path: /api/v1/calendars/{id}
+    scope: deliveryCalendar.calendar:read
+    callers: [frontend]
+    summary: Calendario completo con todos sus días y estados.
+    idempotent: true
+  - method: PUT
+    path: /api/v1/calendars/{id}/dates
+    scope: deliveryCalendar.calendar:edit
+    callers: [frontend]
+    summary: Reprograma la fecha de un día (solo Pending/Scheduled, fuera de las 48h).
+    idempotent: true
+  - method: POST
+    path: /api/v1/calendars/{id}/addresses
+    scope: deliveryCalendar.calendar:edit
+    callers: [frontend]
+    summary: Asigna dirección y coordenadas a un día; Pending → Scheduled.
+    idempotent: true
+  - method: POST
+    path: /api/v1/calendars/{id}/cancel-day
+    scope: deliveryCalendar.calendar:edit
+    callers: [frontend]
+    summary: Cancela un día (fuera de las 48h). Cancelled es terminal.
+    idempotent: false
+  - method: PATCH
+    path: /api/v1/calendars/days/{dayId}/delivery-result
+    scope: deliveryCalendar.deliveryResult:edit
+    callers: [ms5]
+    summary: Registra DELIVERED o FAILED con evidencia. Único camino a Delivered/Failed. Repetir el mismo resultado no hace nada.
+    idempotent: true
+  - method: POST
+    path: /api/v1/calendars/resolve-daily-catalog
+    scope: deliveryCalendar.catalogResolution:manage
+    callers: [ops]
+    summary: Job diario (disparo manual). Pide a MS2 el menú de los días Scheduled de mañana, los pasa a ReadyForProduction y consolida la orden.
+    idempotent: true
+  - method: GET
+    path: /health
+    scope: null
+    callers: [external:consul]
+    summary: Health check anónimo que usa Consul.
+    idempotent: true
+
+sync_calls:
+  - target: ms2
+    method: GET
+    path: /api/catalog/v1/meal-plans/{planId}
+    via: gateway
+    auth: service-account:ms4-service
+    purpose: Obtener la composición del plan y quedarse con el PlanDay cuyo DayNumber coincide con el del DeliveryDay (menú y raciones).
+    on_failure: El día se omite y queda en Scheduled; el resto del job sigue. Se recupera re-ejecutando el job (idempotente). Una caché por plan dura una corrida.
+  - target: identity
+    method: POST
+    path: /api/identity-service/v1/auth/login
+    via: gateway
+    auth: none
+    purpose: Obtener el JWT de la service account ms4-service (scope catalog.mealPlan:read). Se cachea hasta 60 s antes de vencer.
+    on_failure: Si MS2 responde 401, se vuelve a hacer login una vez. Si el login falla, la llamada a MS2 falla y el día queda en Scheduled.
+
+events_published: []
+
+events_consumed:
+  - queue: ms4.meal-plan-published
+    exchange: meal-plan-published
+    contract: MealPlanPublished
+    handler: MealPlanPublishedConsumer
+    effect: Upsert del plan en la proyección PlanCatalog. POST /schedule la usa para rechazar (400) una duración distinta a la del plan.
+    idempotent: true
+  - queue: ms4.recipe-updated
+    exchange: recipe-updated
+    contract: RecipeUpdated
+    handler: RecipeUpdatedConsumer
+    effect: Renombra la receta en el menú de los días que aún no se cerraron (no Delivered, Failed ni Cancelled).
+    idempotent: true
+
+gaps:
+  - id: ms4-gap-01
+    summary: MS5 no llama a delivery-result; los días nunca llegan a Delivered/Failed.
+    severity: high
+    blocked_by: ms5
+  - id: ms4-gap-02
+    summary: Sin autorización por objeto; un token con calendar:edit edita el calendario de cualquier paciente.
+    severity: high
+    blocked_by: ms1
+  - id: ms4-gap-03
+    summary: El job diario de catálogo se dispara a mano; no hay BackgroundService ni cron.
+    severity: medium
+  - id: ms4-gap-04
+    summary: El estado InProduction existe pero nada lo asigna.
+    severity: low
+  - id: ms4-gap-05
+    summary: Las descripciones OpenAPI de Calendars.cs contradicen al código en dos casos (409 al repetir /schedule, 422 al cancelar ReadyForProduction).
+    severity: low
