@@ -8,7 +8,7 @@ Levanta toda la plataforma en una máquina con Docker Compose.
   - `catalog.compose.yml` (MS2)
   - `identity.compose.yml`
   - `ms4.compose.yml` (vive en el repo de MS4; espera la carpeta `ms4-delivery-schedule-management` al lado)
-  - `${NURTRICENTER_REPO_DIR:-nurtricenter-logistics-and-delivery}/nurtricenter.compose.yml` (MS5)
+  - `${NURTRICENTER_REPO_DIR:-ms5-logistics-and-delivery}/nurtricenter.compose.yml` (MS5: API + worker de outbox; usa su propia BD en Neon, leída del `.env` del repo)
 - Red externa compartida: `nur-tricenter-net`.
 - Scripts: `scripts/setup-project` (clona y prepara) y `scripts/start-stack.ps1` / `.sh`.
 
@@ -36,4 +36,4 @@ Cada fragmento incluido se escribe para quedar como **variante de plataforma** d
 
 ## Problemas conocidos
 - `Joseco.Communication.External.RabbitMQ` 1.1.0 ignora `RabbitMqSettings:Port`: el broker tiene que estar en 5672.
-- La carpeta por defecto de MS5 (`nurtricenter-logistics-and-delivery`) no coincide con el nombre del repo en la org (`ms5-logistics-and-delivery`): hay que setear `NURTRICENTER_REPO_DIR`.
+- MS5 se clona como `ms5-logistics-and-delivery` (el nombre del repo en la org). Solo hace falta `NURTRICENTER_REPO_DIR` si está en una carpeta con otro nombre.

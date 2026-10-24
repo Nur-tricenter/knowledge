@@ -62,7 +62,7 @@ flowchart TB
 | `Nur.Tricenter.Integration` | Contratos de los eventos (`IntegrationMessageContract` y sus derivados) |
 | `Nur.Tricenter.Observability` | OpenTelemetry, Jaeger y Serilog con enriquecimiento por span |
 
-Se publican en GitHub Packages. Hoy cada servicio usa una versión distinta (1.0.9, 1.0.10+ y 1.1.0): ver gaps.
+Se publican en GitHub Packages. Hoy no todos usan la misma versión (1.0.9 en MS2 e identity, 1.1.0 en MS4 y MS5) y MS5 solo usa `Nur.Tricenter.Integration`: ver gaps (X-07).
 
 ### Observabilidad
 - MS2 e Identity usan `Nur.Tricenter.Observability` (OpenTelemetry → Jaeger, Serilog).

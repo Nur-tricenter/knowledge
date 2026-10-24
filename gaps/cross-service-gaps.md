@@ -1,7 +1,7 @@
 # Gaps transversales
 
 Problemas que involucran **a más de un servicio**. Los gaps internos de cada MS van en `services/<ms>/gaps.md`.
-Relevado el 2026-10-23 a partir del código de los repos de la org. Al resolver uno, márcalo como cerrado e indica el PR.
+Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07 y X-10 revisados el 2026-10-24 con la ficha de MS5. Al resolver uno, márcalo como cerrado e indica el PR.
 
 | Id | Gap | Severidad | Servicios | Estado |
 |---|---|---|---|---|
@@ -14,38 +14,52 @@ Relevado el 2026-10-23 a partir del código de los repos de la org. Al resolver 
 | X-07 | Versiones mezcladas de los kernels | medium | todos | abierto |
 | X-08 | Sin autorización por objeto (no existe mapeo `sub` → `PatientId`) | high | identity, MS1, MS4 | abierto |
 | X-09 | Tabla maestra de endpoints desactualizada o fuera de los repos | low | todos | abierto |
+| X-10 | Nadie entrega los paquetes producidos a MS5 (`POST /packages/deliveries` sin llamador; el evento de MS3 decidido no existe) | high | MS3, MS5, kernels | abierto |
 
 ## Detalle
 
 ### X-01 — El ciclo de entrega no se cierra
 MS4 expone `PATCH /api/v1/calendars/days/{dayId}/delivery-result` (scope `deliveryCalendar.deliveryResult:edit`), que es el **único** camino para que un día pase a `Delivered`/`Failed`. MS5 registra entregas y fallos (`/deliver`, `/fail`) y publica `delivery-completed`/`delivery-failed`, pero no llama a MS4 ni nadie consume esos eventos. **Impacto:** todos los días quedan en `ReadyForProduction` para siempre.
 
+**Confirmado por MS5 (2026-10-24):** MS5 no tiene cliente HTTP hacia MS4 ni service account, y **no conoce el `dayId`**. Su entrega solo guarda un `PackageId` de texto libre que trae quien llama a `POST /packages/deliveries` (y hoy nadie lo llama: X-10). Los eventos tampoco ayudan: `DeliveryCompleted` lleva `DeliveryId, RouteId, DeliveredAt` (sin `PackageId` ni evidencia) y `DeliveryFailed` lleva `DeliveryId, RouteId, Reason`. Cualquiera de las dos opciones necesita primero que `PackageId` sea el `packId` de MS4 (= `DeliveryDayId`).
+
 **Opciones:**
 - (a) MS5 llama al endpoint vía gateway con una service account `ms5-service`.
-- (b) MS4 consume `delivery-completed`/`delivery-failed`. Requiere que el evento lleve el `dayId` de MS4 (hoy lleva `DeliveryId`/`RouteId` de MS5) y crear las colas `ms4.delivery-*`.
+- (b) MS4 consume `delivery-completed`/`delivery-failed`. Requiere que el evento lleve el `dayId` de MS4 o el `PackageId` (hoy lleva `DeliveryId`/`RouteId` de MS5), sumar la evidencia (foto, firma) al contrato del kernel y crear las colas `ms4.delivery-*`.
 
 Decidirlo con un ADR.
 
 ### X-02 — Eventos de logística sin destino
-`rabbitmq-definitions.json` declara los 10 exchanges de MS5 pero ninguna cola. Lo que se publica ahí se descarta.
+`rabbitmq-definitions.json` declara los 10 exchanges de MS5 pero ninguna cola de consumidor. Lo publicado **no se descarta** mientras corra el worker de MS5: su `DefaultQueueRegistrar` declara la cola durable `nurtricenter.default`, enlazada a los 10 exchanges y nunca consumida (sink de historial). Pero **ningún servicio reacciona** a esos eventos. Tres de los diez (`courier-status-changed`, `courier-assigned-to-route`, `route-cancelled`) ni siquiera se publican: sus métodos de dominio no tienen endpoint (ms5-gap-07).
 
 ### X-03 — MS5 sin seguridad
 MS5 solo llama a `AddAuthorization()`, sin `AddSecurity()` del kernel, y no existen scopes `logistics.*` en `Nur.Tricenter.Access`. Además se registra en Consul como `nurtricenter`, así que su prefijo en el gateway es `/api/nurtricenter`, no un nombre de dominio.
 
+**Confirmado por MS5 (2026-10-24):** ningún endpoint tiene `RequireAuthorization` ni `[Authorize]`; a través del gateway cualquiera puede crear repartidores y rutas, cargar paquetes y cerrar entregas. MS5 tampoco tiene service account (su única llamada saliente va sin token).
+
 ### X-04 — MS1 y MS3 sin repo
-Los demás los referencian (MS3 llama a MS4; hay colas `ms1.*` y `ms3.*`), pero el código no está en la org. MS5 llama a un "ClinicService" (¿MS1?) contra un mock de Postman.
+Los demás los referencian (MS3 llama a MS4; hay colas `ms1.*` y `ms3.*`), pero el código no está en la org. MS5 llama a un "ClinicService", que es MS1 (confirmado por el owner de MS5), contra un mock de Postman: `POST /api/v1/patients/contact-information` con un array de `patientId` (texto), respuesta `[{ patientId, phoneNumber, fullName }]`, **directo** (sin gateway) y sin token. Ese contrato lo definió MS5 y no está en ningún kernel; el MS1 real tendría que respetarlo o MS5 adaptarse.
 
 ### X-05 — Ruta de identity
 El gateway arma el prefijo con el nombre en Consul (`identity-service`) → `/api/identity-service/**`, que es lo que usa MS4. El README de identity y el `Base` de `IdentityPermission` en el kernel dicen `/api/identity`.
 
 ### X-06 — Colas sin consumidor
-Por ejemplo `ms4.recipe-published`, `ms4.food-*`, `ms4.user-*`, `ms2.user-updated` y todas las `ms5.*`. Se acumulan mensajes sin que nadie los lea. O se consumen, o se quitan de la topología.
+Por ejemplo `ms4.recipe-published`, `ms4.food-*`, `ms4.user-*`, `ms2.user-updated` y todas las `ms5.*` (7 colas: `food-*`, `recipe-*`, `meal-plan-published`, `user-*`; MS5 no consume nada hoy). Se acumulan mensajes sin que nadie los lea. O se consumen, o se quitan de la topología.
 
 ### X-07 — Kernels en versiones distintas
-MS2 e identity en 1.0.9, MS5 en 1.0.10+, MS4 en 1.1.0 (que agrega `DeliveryCalendarPermission`). Los contratos de eventos pueden divergir entre publisher y consumidor.
+MS2 e identity en 1.0.9, MS4 en 1.1.0 (que agrega `DeliveryCalendarPermission`). MS5 usa **solo** `Nur.Tricenter.Integration` 1.1.0 (no `Access`, `Security` ni `Observability`); su doc decía que 1.1.0 era "la versión de toda la plataforma", lo que no se cumple para MS2 e identity. Los contratos de eventos pueden divergir entre publisher y consumidor.
 
 ### X-08 — Autorización por objeto
 Los scopes dicen *qué tipo* de cliente llama, no *de quién* es el recurso. Hace falta que el token (o una consulta a MS1) permita mapear `sub` → `PatientId`.
 
 ### X-09 — Tabla maestra de endpoints
 Existe una tabla maestra de endpoints MS1–MS5 que no está en ningún repo. No incluye la llamada MS5 → MS4 ni `GET /calendars/{id}`. Esta base de conocimiento debería reemplazarla.
+
+### X-10 — Los paquetes producidos no llegan a logística
+MS5 expone `POST /api/v1/packages/deliveries` (array de `{ patientId, packageDetails: { packageId, destination: { address, addressCoordinates: { lat, long } }, additionalDetails } }`), que agrega cada paquete a la ruta de hoy. **Ningún servicio lo llama.** Su forma coincide casi campo por campo con las líneas de `GET /calendars/active-tomorrow` de MS4 (`packId`, `patientId`, `address`, `latitude`, `longitude`), pero no hay contrato acordado.
+
+**Impacto:** en la plataforma ningún paquete llega solo a una ruta; el flujo de punta a punta se corta entre la producción y el reparto.
+
+**Decisión (owner de MS5, 2026-10-24):** MS3 publica un **evento** con los paquetes producidos y MS5 lo consume; `POST /packages/deliveries` queda como entrada manual. **Pendiente:** el contrato en `Nur.Tricenter.Integration` (aún no existe), su exchange y la cola `ms5.*` en `nur-tricenter-local`, el publisher en MS3 (sin repo, X-04) y el consumidor idempotente en MS5. Cuando el contrato exista, se agrega a `contracts/events.yaml`.
+
+El `packageId` del evento tendría que ser el `packId` de MS4: eso destraba también X-01. Hay que alinear tipos: MS5 usa `string` para `patientId`, MS4 usa `Guid`.

@@ -19,7 +19,12 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | Orden de producción | Foto consolidada de todo lo que hay que producir para una fecha | MS4 (la consume MS3) |
 | Ruta | Conjunto de entregas asignadas a un repartidor en un día | MS5 |
 | Repartidor (courier) | Persona que ejecuta la ruta | MS5 |
-| Evidencia de entrega | Foto/firma y momento de la entrega | MS5 → MS4 |
+| Entrega / parada (`Delivery`) | Un paquete a llevar a una dirección dentro de una ruta. Entidad hija de la ruta en MS5; no confundir con el `DeliveryDay` de MS4 | MS5 |
+| Paquete validado (`ValidatedPackage`) | Lo que se entrega: `PackageId`, `PatientId` y los datos de la etiqueta | MS5 |
+| Sucursal / punto de partida (`branchCoordinates`) | Coordenada fija desde la que sale todo repartidor; origen de la secuencia de entrega | MS5 |
+| Secuencia de entrega (`SequenceOrder`) | Orden de las paradas, calculado al iniciar la ruta con el vecino más cercano desde la sucursal | MS5 |
+| Evidencia de entrega (`DeliveryConfirmation`) | Foto, firma y momento de la entrega. Hoy queda solo en MS5: no llega a MS4 (X-01) | MS5 → MS4 |
+| ClinicService | Nombre con que MS5 llama al servicio de contacto de pacientes de MS1. Hoy es un mock de Postman | MS1 |
 
 ## Técnico
 | Término | Significado |
@@ -42,3 +47,5 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | ProblemDetails | Formato estándar de error HTTP (RFC 7807) |
 | Kernel | Paquete NuGet compartido de la plataforma |
 | `catalog.default` | Cola pasiva y durable de MS2 que acumula el historial completo de todo lo publicado (sink de auditoría) |
+| `nurtricenter.default` | Sink equivalente de MS5: cola durable enlazada a sus 10 exchanges, declarada por su worker y nunca consumida |
+| `nurtricenter` | Nombre de MS5 en Consul (y por eso su prefijo en el gateway, `/api/nurtricenter`) |

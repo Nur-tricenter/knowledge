@@ -20,7 +20,7 @@ Cada paso pertenece a un microservicio distinto, y el foco del diplomado está e
 | MS2 | Catálogo de planes y recetas | Alimentos, recetas y planes nutricionales por número de día | [ms2-plans-and-recipes-catalog](https://github.com/Nur-tricenter/ms2-plans-and-recipes-catalog) | [complete](../services/ms2-catalog/README.md) |
 | MS3 | Contratación y producción | Contrato, pago y orden de producción diaria | _sin repo en la org_ | pendiente |
 | MS4 | Calendario de entregas | Calendario por paciente, reglas de cambio (48h), orden de producción consolidada | [ms4-delivery-schedule-management](https://github.com/Nur-tricenter/ms4-delivery-schedule-management) | [completa](../services/ms4-delivery-calendar/README.md) |
-| MS5 | Logística y entregas | Repartidores, rutas y resultado de cada entrega | [ms5-logistics-and-delivery](https://github.com/Nur-tricenter/ms5-logistics-and-delivery) | pendiente |
+| MS5 | Logística y entregas | Repartidores, ruta del día con la secuencia de paradas y resultado de cada entrega (evidencia o motivo del fallo). Publica 10 eventos; hoy no avisa el resultado a MS4 | [ms5-logistics-and-delivery](https://github.com/Nur-tricenter/ms5-logistics-and-delivery) | [complete](../services/ms5-logistics/README.md) |
 | — | Identity | Usuarios, scopes y emisión de JWT | [nur-tricenter-identity](https://github.com/Nur-tricenter/nur-tricenter-identity) | pendiente |
 | — | API Gateway | Punto de entrada único, ruteo dinámico vía Consul | [nur-tricenter-api-gateway](https://github.com/Nur-tricenter/nur-tricenter-api-gateway) | pendiente |
 
@@ -64,5 +64,5 @@ Las flechas continuas son REST y las punteadas son eventos RabbitMQ. El último 
 | Nutricionista | MS2 | Arma alimentos, recetas y planes |
 | Cocina / producción | MS3 | Consume la orden de producción diaria |
 | Repartidor | MS5 | App de reparto: ruta del día, entregar o fallar |
-| Operaciones | MS4 | Dispara el job diario de catálogo (manual por ahora) |
+| Operaciones | MS4, MS5 | Dispara el job diario de catálogo de MS4 (manual por ahora); da de alta repartidores y rutas en MS5 |
 | Administrador | Identity | Crea usuarios y asigna scopes |
