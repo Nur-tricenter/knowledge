@@ -8,7 +8,10 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | Paciente | Persona que recibe la alimentación a domicilio | MS1 |
 | Plan nutricional (meal plan) | Plan de 15 o 30 días. Cada día (`PlanDay`, por **número** de día) tiene tiempos de comida con recetas y raciones | MS2 |
 | Receta | Preparación compuesta de porciones de alimentos, con nutrientes calculados | MS2 |
-| Tiempo de comida (meal time) | Desayuno, almuerzo, etc., dentro de un día del plan | MS2 |
+| Tiempo de comida (meal time) | Desayuno, media mañana, almuerzo, merienda o cena dentro de un día del plan | MS2 |
+| Porción (`Portion`) | Cantidad de un ingrediente dentro de una receta (decimal) | MS2 |
+| Ración (`Ration`) | Cantidad de una receta dentro de un tiempo de comida (entero) | MS2 |
+| `PlanAuthors` | Read model local de MS2 con los datos del autor del plan, proyectado desde `user-published` | MS2 |
 | Contrato | Compra de un plan por un paciente; origina el calendario | MS3 |
 | Calendario de entregas | Secuencia de días de entrega de un paciente, uno por día del plan | MS4 |
 | Día de entrega (`DeliveryDay`) | Una entrega concreta: fecha, dirección, menú, estado y evidencia | MS4 |
@@ -38,3 +41,4 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | Consistencia eventual | Las copias convergen con el tiempo, no al instante |
 | ProblemDetails | Formato estándar de error HTTP (RFC 7807) |
 | Kernel | Paquete NuGet compartido de la plataforma |
+| `catalog.default` | Cola pasiva y durable de MS2 que acumula el historial completo de todo lo publicado (sink de auditoría) |
