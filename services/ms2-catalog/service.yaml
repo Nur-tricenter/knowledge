@@ -1,4 +1,4 @@
-# Ficha estructurada de MS2. Fuente: código de Nur-tricenter/ms2-plans-and-recipes-catalog (2026-10-24).
+# Ficha estructurada de MS2. Fuente: código de Nur-tricenter/ms2-plans-and-recipes-catalog (2026-10-24; revisada contra main ca0c9de el 2026-10-28).
 
 id: ms2
 name: Catálogo de planes y recetas (Catalog)
@@ -15,10 +15,13 @@ summary: >-
 stack: [.NET 8, Clean Architecture, DDD, MediatR, EF Core 9, PostgreSQL, RabbitMQ (Joseco), Consul]
 
 runtime:
-  consul_name: catalog-service
+  # Nombre que registra la plataforma (catalog.compose.yml). El default del código es catalog-service (ms2-gap-09).
+  consul_name: catalog
   gateway_prefix: /api/catalog
+  # BD en la plataforma. En el docker-compose.yml standalone la BD se llama catalog.
   database: ms2-plans-and-recipes-catalog
-  workers: [catalog-workerservice, catalog-migrate]
+  # Sin job de migración en la plataforma: catalog-api migra al arrancar (Migrations__ApplyOnStartup=true).
+  workers: [catalog-workerservice]
 
 aggregates:
   - name: Food
@@ -41,7 +44,7 @@ endpoints:
   - method: GET
     path: /api/v1/foods/{id}
     scope: catalog.food:read
-    callers: [frontend, ms4]
+    callers: [frontend]
     summary: Obtener alimento por id.
     idempotent: true
   - method: GET
@@ -60,7 +63,7 @@ endpoints:
     path: /api/v1/foods
     scope: catalog.food:edit
     callers: [frontend]
-    summary: Actualizar alimento (dispara FoodUpdated interno; no publica contrato externo).
+    summary: Actualizar alimento (dispara FoodUpdated interno; no publica contrato externo). Cualquier fallo del handler responde 404.
     idempotent: true
   - method: POST
     path: /api/v1/recipes
@@ -83,7 +86,7 @@ endpoints:
   - method: GET
     path: /api/v1/recipes/{id}
     scope: catalog.recipe:read
-    callers: [frontend, ms4]
+    callers: [frontend]
     summary: Obtener receta con ingredientes.
     idempotent: true
   - method: GET
@@ -126,13 +129,13 @@ endpoints:
     path: /api/v1/meal-plans/{mealPlanId}
     scope: catalog.mealPlan:read
     callers: [frontend, ms4]
-    summary: Composición completa del plan (plan → días → tiempos → recetas → ingredientes).
+    summary: Composición completa del plan (plan → días → tiempos → recetas → ingredientes), con authorId/authorName.
     idempotent: true
   - method: GET
     path: /api/v1/meal-plans
     scope: catalog.mealPlan:read
     callers: [frontend]
-    summary: Listar planes.
+    summary: Listar planes (lista plana con duración, comidas por día y autor; sin composición).
     idempotent: true
   - method: GET
     path: /health
@@ -206,9 +209,15 @@ gaps:
     summary: GetMealPlanComposition hace consultas en bucle (N+1) contra el read model.
     severity: low
   - id: ms2-gap-09
-    summary: Nombre en Consul inconsistente entre default (catalog-service) y override de plataforma (catalog).
+    summary: Nombre en Consul inconsistente entre el default del código (catalog-service) y el que registra la plataforma (catalog).
     severity: low
     blocked_by: gateway
   - id: ms2-gap-10
     summary: No hay endpoints para editar nombre/instrucciones de receta ni nombre/duración de plan.
+    severity: low
+  - id: ms2-gap-11
+    summary: Los handlers capturan toda excepción y la devuelven como Result.Fail; una caída de BD responde 400/404 con el mensaje de la excepción, y PUT /foods responde 404 ante cualquier fallo.
+    severity: medium
+  - id: ms2-gap-12
+    summary: Los scopes catalog.{food,recipe,mealPlan}:manage existen en el kernel pero ningún endpoint los exige; CatalogRoutes del kernel está desactualizado respecto de las rutas reales.
     severity: low

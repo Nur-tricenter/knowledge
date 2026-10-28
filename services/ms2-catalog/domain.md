@@ -74,7 +74,6 @@
 | `Ration` | `Quantity` > 0 (int) |
 | `MealTimeType` | enum: Breakfast=1, MidMorning=2, Lunch=3, Snack=4, Dinner=5 |
 | `PlanAuthorId` | rechaza `Guid.Empty`; nullable en el agregado para planes sembrados |
-| `CategoryName` | no vacío, ≤ 50 |
 
 ## Máquina de estados
 
