@@ -17,7 +17,7 @@
   - `startDate` = **el día siguiente al pago** (UTC).
 - **Autenticación:** JWT de la service account `ms3-service`, con el scope `deliveryCalendar.calendar:create`.
 - **Por qué es síncrono:** MS4 ya diseñó este paso como un POST idempotente por `contractId`; MS3 necesita saber si el calendario se aceptó o se rechazó (por ejemplo, por duración inválida).
-- **Por qué sale del outbox y no del handler:** el cobro no debe fallar porque MS4 esté caído. El handler guarda la factura y la fila `CreateSchedule` en la misma transacción; el worker la entrega después.
+- **Por qué sale del outbox y no del handler:** el cobro no debe fallar porque MS4 esté caído. El handler guarda la factura y la fila `CreateSchedule`; el worker la entrega después. **No es la misma transacción:** `ProcessPaymentCommandHandler` llama dos veces a `CommitAsync` (primero el contrato y la factura, después la fila), sin transacción explícita. Si el proceso cae entre ambos, el contrato queda pagado y sin fila, y el calendario nunca se pide (`ms3-gap-11`).
 - **Si falla:**
   | Respuesta de MS4 | Estado de la fila | Reintento |
   |---|---|---|
@@ -26,6 +26,7 @@
   | 401, 5xx o sin respuesta | sigue `Simulated` | cada 5 s (`Outbox__PollingIntervalSeconds`) |
   | `DeliveryCalendar__BaseUrl` sin configurar | `Unroutable` | no |
   | Plan sin duración conocida | `Rejected` | no |
+  | El API cae entre los dos `CommitAsync` del pago | no hay fila | nunca (`ms3-gap-11`) |
 - **Modo sin dependencia:** en standalone no hay `DeliveryCalendar__BaseUrl`; el cliente es `DisabledDeliveryCalendarClient` y las filas quedan `Unroutable`.
 
 ### MS3 → MS4: orden de producción
@@ -36,7 +37,7 @@
 - **Por qué es síncrono:** la orden se pide en un momento exacto (la noche anterior) y MS4 la consolidó antes. MS4 no resuelve bajo demanda.
 - **Quién lo usa:** `GET /production/daily-order`, el etiquetado de paquetes y la validación de calidad (para la dirección y las coordenadas).
 - **Si falla:** no hay valor por defecto honesto. La orden diaria responde 500; no se crea nada. Si MS4 devuelve `[]`, responde 404 `NO_CALENDARS`.
-- **Compatibilidad:** `menu` es un campo nuevo que MS3 le propone a MS4 (rama `feat/active-tomorrow-menu`). Sin él, MS3 usa la estructura simulada del plan y, si tampoco la hay, responde 422 `NO_RECIPES`.
+- **Compatibilidad:** `menu` es un campo nuevo que MS3 le propone a MS4. Está en la rama `feat/active-tomorrow-menu` de MS4, **sin PR**; `main` de MS4 todavía no lo devuelve (`ms3-gap-07`). Sin él, MS3 usa la estructura simulada del plan y, si tampoco la hay, responde 422 `NO_RECIPES`.
 - **Modo sin dependencia:** sin `DeliveryCalendar__BaseUrl`, `SimulationDataService` devuelve 3 calendarios fijos.
 
 ### MS3 → Identity: login de la service account

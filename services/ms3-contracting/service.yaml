@@ -1,4 +1,4 @@
-# Ficha estructurada de MS3. Fuente: código de Nur-tricenter/ms3-contract-and-production (2026-10-24).
+# Ficha estructurada de MS3. Fuente: código de Nur-tricenter/ms3-contract-and-production (2026-10-24; revisado contra main 4cc8864 el 2026-10-28).
 
 id: ms3
 name: Contratación y producción (Contracting & Production)
@@ -11,7 +11,7 @@ summary: >-
   Registra el contrato de un paciente con un plan y su cobro, pide a MS4 el calendario de entregas,
   arma la orden de producción diaria con el menú de MS4 y lleva cada paquete por armado, etiqueta y
   control de calidad hasta avisar a logística.
-stack: [.NET 8, FastEndpoints, MediatR, EF Core, PostgreSQL, RabbitMQ (Joseco)]
+stack: [.NET 8 (net8.0), FastEndpoints 5.35.0, MediatR 12.4.1, EF Core 8.0.11, PostgreSQL (Npgsql 8.0.11), Joseco.DDD.Core 1.0.2, RabbitMQ (Joseco.Communication.External.RabbitMQ 1.1.0), Consul 1.7.14.7]
 
 runtime:
   consul_name: contracting
@@ -199,21 +199,21 @@ gaps:
     severity: high
     blocked_by: ms1
   - id: ms3-gap-03
-    summary: PackageValidated no trae el packId de MS4 ni el tipo de PatientId que usa MS5; MS5 no lo consume.
+    summary: PackageValidated no trae el packId de MS4 ni el tipo de PatientId que usa MS5; MS5 (rama dev) y MS4 (PR #3) no pueden correlacionar la entrega con el día.
     severity: high
     blocked_by: ms5
   - id: ms3-gap-04
     summary: Los errores de dominio devuelven 500 y validate deja el lote a medias si un paquete falla.
     severity: medium
   - id: ms3-gap-05
-    summary: Los contratos de MS3 y del catálogo son copias locales hasta publicar el kernel 1.2.0.
+    summary: MS3 no referencia ningún paquete Nur.Tricenter.*; los contratos de MS3 y del catálogo son copias locales equivalentes del kernel 1.2.0.
     severity: medium
   - id: ms3-gap-06
     summary: Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario.
     severity: medium
     blocked_by: ms4
   - id: ms3-gap-07
-    summary: La orden de producción real depende del campo menu de active-tomorrow, propuesto a MS4 y aún sin mergear.
+    summary: La orden de producción real depende del campo menu de active-tomorrow, que solo está en una rama de MS4 sin PR.
     severity: medium
     blocked_by: ms4
   - id: ms3-gap-08
@@ -227,3 +227,6 @@ gaps:
   - id: ms3-gap-10
     summary: Mensajes no persistentes y colas ms3.food-* y ms3.user-* sin consumidor.
     severity: low
+  - id: ms3-gap-11
+    summary: El outbox no es atómico; el pago y la validación de calidad guardan el agregado y la fila en dos CommitAsync sin transacción.
+    severity: medium

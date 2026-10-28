@@ -50,6 +50,7 @@ sequenceDiagram
   | MS4 responde 400/422 (duración ≠ 15/30) | Fila `Rejected`; el contrato **queda activo y pagado** sin calendario |
   | MS4 o identity caídos | Fila pendiente; el pago respondió 200 igual; se reintenta cada 5 s y se completa solo |
   | Pagar dos veces | 500 la segunda vez (el dominio lo prohíbe, pero no se mapea) |
+  | El API cae entre guardar el pago y guardar la fila | Contrato pagado sin fila `CreateSchedule`: el calendario nunca se pide (`ms3-gap-11`) |
 - **Idempotencia / reintentos:** `POST /schedule` es idempotente por `contractId` en MS4; un reintento de MS3 no crea un segundo calendario.
 
 ```mermaid
@@ -62,7 +63,8 @@ sequenceDiagram
   participant MS4
   P->>GW: POST /api/contracting/v1/billing/charge-plan
   GW->>MS3: POST /api/v1/billing/charge-plan
-  MS3->>MS3: factura + contrato Active + fila CreateSchedule (misma transacción)
+  MS3->>MS3: CommitAsync factura + contrato Active
+  MS3->>MS3: CommitAsync fila CreateSchedule (no atómico)
   MS3-->>P: 200 processed
   W->>MS3: lee fila pendiente
   W->>ID: login ms3-service
@@ -87,7 +89,7 @@ sequenceDiagram
   | Las entregas no traen `menu` y el plan no tiene estructura simulada | 422 `NO_RECIPES`, sin crear la orden |
   | MS4 caído o rechaza el token | 500 |
 - **Idempotencia:** por fecha; llamar de nuevo devuelve la misma orden.
-- **Nota:** `menu` es un campo nuevo que MS3 propone a MS4 (`feat/active-tomorrow-menu`). Sin él, solo funciona con los planes simulados.
+- **Nota:** `menu` es un campo nuevo que MS3 propone a MS4 (rama `feat/active-tomorrow-menu` de MS4, sin PR; `main` de MS4 no lo devuelve). Sin él, solo funciona con los planes simulados.
 
 ```mermaid
 sequenceDiagram
@@ -111,7 +113,7 @@ sequenceDiagram
 - **Precondición:** el paquete pasó `assemble` y `label`.
 - **Camino feliz:**
   1. MS3 recorre los paquetes de la orden y llama a `ApproveQualityControl` en cada uno.
-  2. Por cada uno guarda la fila `TransferToLogistics` con dirección, tracking y coordenadas (estas, desde el calendario de MS4).
+  2. Por cada uno guarda el paquete y, en un segundo `CommitAsync`, la fila `TransferToLogistics` con dirección, tracking y coordenadas (estas, desde el calendario de MS4 de mañana).
   3. El worker publica `PackageValidated` en el exchange `package-validated`; llega a `ms5.package-validated`.
 - **Errores:**
   | Situación | Resultado |
@@ -119,7 +121,8 @@ sequenceDiagram
   | `batchValidated` falso o conteo distinto | 400 |
   | Un paquete no está `Labeled` | 500; los paquetes anteriores del lote ya quedaron validados |
   | RabbitMQ caído | La fila queda pendiente y se publica sola al volver |
-  | MS5 no consume | El mensaje espera en la cola; **hoy nadie lo lee** (X-10) |
+  | El API cae entre guardar el paquete y guardar la fila | Paquete `Validated` sin evento: MS5 nunca se entera (`ms3-gap-11`) |
+  | MS5 sin desplegar su consumidor | El mensaje espera en la cola. `PackageValidatedConsumer` existe en la rama `dev` de MS5, aún no en `main` (X-10) |
 - **Idempotencia:** el `Id` del mensaje es el de la fila; un consumidor debe descartar repetidos.
 
 ```mermaid
@@ -130,10 +133,10 @@ sequenceDiagram
   participant MQ as RabbitMQ
   participant MS5
   S->>MS3: POST /production/packages/validate
-  MS3->>MS3: paquete Validated + fila TransferToLogistics
+  MS3->>MS3: paquete Validated, luego fila TransferToLogistics (2 commits)
   MS3-->>S: 200 { validatedCount }
   W->>MQ: PackageValidated (package-validated)
-  MQ-->>MS5: ms5.package-validated (aún sin consumidor)
+  MQ-->>MS5: ms5.package-validated (PackageValidatedConsumer, rama dev)
 ```
 
 ## F5 — Cobrar un control sin contrato (frontend → MS3)
