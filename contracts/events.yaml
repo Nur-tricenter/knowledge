@@ -124,7 +124,7 @@ exchanges:
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Route.DeliveryAdded
     payload: [RouteId, DeliveryId, PackageId, PatientId]
-    queues: []
+    queues: [ms4.delivery-added-to-route]
 
   - name: route-started
     publisher: ms5
@@ -156,7 +156,7 @@ exchanges:
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Delivery.Completed
     payload: [DeliveryId, RouteId, DeliveredAt]
-    queues: []
+    queues: [ms4.delivery-completed]
 
   - name: delivery-failed
     publisher: ms5
@@ -164,4 +164,4 @@ exchanges:
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Delivery.Failed
     payload: [DeliveryId, RouteId, Reason]
-    queues: []
+    queues: [ms4.delivery-failed]

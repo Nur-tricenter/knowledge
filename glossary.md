@@ -26,7 +26,7 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | Paquete validado (`ValidatedPackage`) | Lo que se entrega: `PackageId`, `PatientId` y los datos de la etiqueta | MS5 |
 | Sucursal / punto de partida (`branchCoordinates`) | Coordenada fija desde la que sale todo repartidor; origen de la secuencia de entrega | MS5 |
 | Secuencia de entrega (`SequenceOrder`) | Orden de las paradas, calculado al iniciar la ruta con el vecino más cercano desde la sucursal | MS5 |
-| Evidencia de entrega (`DeliveryConfirmation`) | Foto, firma y momento de la entrega. Hoy queda solo en MS5: no llega a MS4 (X-01) | MS5 → MS4 |
+| Evidencia de entrega (`DeliveryConfirmation`) | Foto, firma y momento de la entrega. Hoy queda solo en MS5: `DeliveryCompleted` no la lleva y a MS4 solo llega la hora de entrega (X-01) | MS5 → MS4 |
 | ClinicService | Nombre con que MS5 llama al servicio de contacto de pacientes de MS1. Hoy es un mock de Postman | MS1 |
 
 ## Técnico

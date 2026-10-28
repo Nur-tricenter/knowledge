@@ -18,14 +18,14 @@ Cuando un paciente contrata un plan nutricional, lo que en realidad compra es **
 - No sabe quién es el paciente más allá de su `PatientId` → **MS1**.
 - No arma rutas ni asigna repartidores → **MS5**.
 - No emite tokens → **identity**. Solo los valida.
-- **No publica eventos.**
+- **No publica eventos** (consume 5: 2 de MS2 y 3 de MS5).
 
 ## Actores y vecinos
 | Actor / servicio | Dirección | Mecanismo | Para qué |
 |---|---|---|---|
 | MS3 Contratación | entrante | REST vía gateway | Crear calendario; leer la orden de producción de mañana |
 | Frontend (paciente) | entrante | REST vía gateway | Ver calendario, poner dirección, reprogramar, cancelar |
-| MS5 Logística | entrante | REST vía gateway | Informar entregado/fallido _(aún no implementado en MS5)_ |
+| MS5 Logística | entrante | Evento RabbitMQ (y REST como vía manual) | `delivery-added-to-route`, `delivery-completed`, `delivery-failed` cierran el día; requieren que `PackageId` sea el `packId` |
 | Operaciones | entrante | REST | Disparar el job diario de catálogo |
 | MS2 Catálogo | saliente | REST vía gateway + service account | Menú del día N del plan |
 | Identity | saliente | REST vía gateway | Login de la service account `ms4-service` |
@@ -37,7 +37,7 @@ Cuando un paciente contrata un plan nutricional, lo que en realidad compra es **
 flowchart LR
   MS3[MS3 Contratación] -- "POST /schedule<br/>GET /active-tomorrow" --> MS4((MS4<br/>Calendario))
   FE[Frontend paciente] -- "GET / PUT / POST<br/>calendars/{id}/…" --> MS4
-  MS5[MS5 Logística] -. "PATCH delivery-result<br/>(pendiente)" .-> MS4
+  MS5[MS5 Logística] -. "delivery-added-to-route / completed / failed<br/>(PackageId = packId pendiente)" .-> MS4
   OPS[Operaciones] -- "POST resolve-daily-catalog" --> MS4
   MS4 -- "GET /meal-plans/{id}<br/>service account" --> MS2[MS2 Catálogo]
   MS4 -- "login ms4-service" --> ID[Identity]
@@ -56,7 +56,7 @@ Todas las llamadas REST pasan por el gateway (`/api/delivery-calendar/**` para e
 | BD | contenedor propio | `ms4_delivery_calendar` en el Postgres compartido |
 | Consul | apagado | se registra como `delivery-calendar` |
 | MS2 | `MockCatalogPort` (fixture) | `HttpCatalogPort` vía gateway |
-| RabbitMQ | no se usa | `src/WorkerService` consume 2 colas |
+| RabbitMQ | no se usa | `src/WorkerService` consume 5 colas |
 | Esquema | migración + seed al arrancar | job one-shot `--migrate`, sin seed |
 
 - **Procesos en plataforma:** `delivery-calendar-api` (puerto 8080), `delivery-calendar-workerservice` (consumidores; no se registra en Consul) y `delivery-calendar-migrate` (one-shot).
