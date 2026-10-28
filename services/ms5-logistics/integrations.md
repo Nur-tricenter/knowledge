@@ -5,7 +5,7 @@
 |---|---|---|---|---|
 | MS1 — ClinicService (hoy un mock de Postman) | `POST /api/v1/patients/contact-information` | **directo** (no pasa por el gateway) | ninguna | Validar que los pacientes existen y obtener nombre y teléfono |
 
-Es la **única** llamada HTTP saliente. MS5 **no llama a MS4** (no existe cliente HTTP ni service account para `PATCH /delivery-result`: gap X-01) ni a identity.
+Es la **única** llamada HTTP saliente. MS5 **no llama a MS4** (no existe cliente HTTP ni service account para `PATCH /delivery-result`; MS4 recibe el resultado por eventos, ver [messaging.md](./messaging.md)) ni a identity.
 
 ## Detalle
 
@@ -39,7 +39,7 @@ Es la **única** llamada HTTP saliente. MS5 **no llama a MS4** (no existe client
 
 ```mermaid
 sequenceDiagram
-  participant P as Operaciones (respaldo manual; MS3 usa el evento)
+  participant P as Operaciones (única entrada de paquetes en main)
   participant GW as Gateway
   participant MS5
   participant CS as MS1 ClinicService (mock Postman)
@@ -63,5 +63,5 @@ sequenceDiagram
 ## Integraciones que faltan
 | Destino | Qué haría falta | Gap |
 |---|---|---|
-| MS4 Calendario | `PATCH /api/delivery-calendar/v1/calendars/days/{dayId}/delivery-result` con scope `deliveryCalendar.deliveryResult:edit`, usando una service account `ms5-service` (login en identity, como hace MS4 con MS2). Requiere además saber el `dayId` de MS4 de cada entrega | X-01 / ms5-gap-02 |
+| MS4 Calendario | Ninguna llamada REST: se eligió el camino por eventos (MS4 consume `delivery-*` por colas `ms4.delivery-*`). `PATCH /delivery-result` sigue sin usarse desde MS5. Lo pendiente es que el `PackageId` sea el `packId` de MS4 | X-01 / ms5-gap-02 |
 | MS1 Pacientes real | Reemplazar el mock por el servicio real, detrás del gateway (`/api/<consul-name-ms1>/v1/...`) y con un token | X-04 / ms5-gap-05 |

@@ -169,9 +169,9 @@ Todas lanzan `DomainException` con un `Error`; `DomainExceptionHandler` lo tradu
 - Las entregas agregadas **después** de iniciar la ruta quedan sin `SequenceOrder`. `GET …/route/today` les asigna como respaldo su posición en la lista (`index + 1`), que puede repetir un número ya usado.
 
 ## Datos que son copia de otro servicio
-**Ninguna proyección local.** El único evento que consume (`package-validated`) crea entregas; no mantiene copias de datos ajenos.
+**Ninguna proyección local.** En `main` no consume eventos; no mantiene copias de datos ajenos.
 | Dato | Origen | Cómo se mantiene |
 |---|---|---|
-| `PatientId` (dentro de `ValidatedPackage`) | MS3, evento `package-validated` (GUID convertido a texto); o quien use `POST /packages/deliveries` | Solo la referencia, como texto |
-| Nombre y teléfono del paciente | MS1 (ClinicService; hoy un mock de Postman) | **No se guardan**: se piden por HTTP en cada `POST /packages/deliveries` y en cada `GET …/route/today`. El evento `package-validated` **no** consulta a MS1 |
-| `PackageId` | Quien llama a `POST /packages/deliveries` | Texto libre. Si el llamador usara el `packId` de MS4, serviría para cerrar el gap X-01, pero el código no lo garantiza |
+| `PatientId` (dentro de `ValidatedPackage`) | Quien llama a `POST /packages/deliveries` (en la rama `dev`, también el evento `package-validated` de MS3) | Solo la referencia, como texto |
+| Nombre y teléfono del paciente | MS1 (ClinicService; hoy un mock de Postman) | **No se guardan**: se piden por HTTP en cada `POST /packages/deliveries` y en cada `GET …/route/today` |
+| `PackageId` | Quien llama a `POST /packages/deliveries` | Texto libre. MS4 lo lee como su `packId` al consumir `delivery-added-to-route`: si el llamador usa el `packId` de MS4, el día se puede cerrar; el código de MS5 no lo garantiza (ms5-gap-02) |

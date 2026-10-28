@@ -17,39 +17,39 @@ Una vez que la comida está producida, alguien tiene que llevarla a la puerta de
 ## Lo que NO hace
 - No produce la comida ni decide qué se entrega cada día → **MS3** (producción) y **MS4** (orden de producción y calendario).
 - No guarda datos del paciente: solo su `PatientId`. El nombre y el teléfono se piden a **MS1** (hoy, un mock de Postman) cada vez que hacen falta.
-- No actualiza el calendario de entregas: el día de MS4 **no** pasa a `Delivered`/`Failed` porque MS5 no llama a `PATCH /delivery-result` (gap X-01).
+- No llama a MS4 por REST (`PATCH /delivery-result` no se usa). El cierre del día de MS4 depende de que **MS4** consuma `delivery-added-to-route`, `delivery-completed` y `delivery-failed` (colas `ms4.delivery-*`, ya en la topología; el código de MS4 está en el PR Nur-tricenter/ms4-delivery-schedule-management#3, sin merge) y de que el `PackageId` cargado en MS5 sea el `packId` de MS4. MS5 no lo garantiza (gap X-01, ms5-gap-02).
 - No autentica ni autoriza: **todos sus endpoints son anónimos** (gap X-03). No emite ni valida tokens.
-- Consume **un solo** evento: `package-validated` de MS3 (paquetes aprobados por calidad), que agrega a la ruta de hoy. Las otras 7 colas `ms5.*` que declara la topología no las lee nadie.
+- En `main` **no consume ningún evento**: el worker es "PURE PRODUCER" (`RabbitMqExtensions.cs`). Los paquetes entran solo por `POST /packages/deliveries`. El consumidor de `package-validated` de MS3 está **implementado en la rama `dev`, sin merge a `main`** (ms5-gap-03). Las 8 colas `ms5.*` que declara la topología, incluida `ms5.package-validated`, no las lee nadie en `main`.
 
 ## Actores y vecinos
 | Actor / servicio | Dirección | Mecanismo | Para qué |
 |---|---|---|---|
-| Operaciones / logística | entrante | REST vía gateway | Alta de repartidores y de rutas |
-| MS3 Producción | entrante | Evento RabbitMQ `package-validated` (cola `ms5.package-validated`) | Entregar los paquetes aprobados por calidad, que se agregan a la ruta de hoy |
+| Operaciones / logística | entrante | REST vía gateway | Alta de repartidores y de rutas; carga de los paquetes del día (`POST /packages/deliveries`) |
+| MS3 Producción | entrante _(solo en `dev`)_ | Evento RabbitMQ `package-validated` (cola `ms5.package-validated`) | En `main` no se consume. En la rama `dev` (sin merge), los paquetes aprobados por calidad se agregan a la ruta de hoy |
 | App del repartidor (frontend) | entrante | REST vía gateway | Ver la ruta del día, iniciarla, marcar entregado / fallido |
 | ClinicService (MS1, hoy mock de Postman) | saliente | REST **directo**, sin token | Validar pacientes y obtener su nombre |
 | RabbitMQ | saliente | Outbox → 10 exchanges fanout | Avisar altas de repartidores, rutas y resultados de entrega |
-| MS4 Calendario | saliente _(pendiente)_ | — | Debería recibir el resultado de la entrega; hoy no se llama |
+| MS4 Calendario | saliente | Eventos `delivery-added-to-route`, `delivery-completed`, `delivery-failed` (colas `ms4.delivery-*`) | MS4 cierra sus `DeliveryDay` con ellos (consumidor en el PR #3 de MS4, sin merge). No hay llamada REST |
 | Consul | saliente | Auto-registro + `/health` | Que el gateway lo encuentre como `nurtricenter` |
 
 ## Mapa de comunicación
 ```mermaid
 flowchart LR
-  OPS[Operaciones] -- "POST /couriers<br/>POST /routes" --> MS5((MS5<br/>Logística))
-  MS3[MS3 Producción] -. "package-validated<br/>ms5.package-validated" .-> MS5
+  OPS[Operaciones] -- "POST /couriers<br/>POST /routes<br/>POST /packages/deliveries" --> MS5((MS5<br/>Logística))
+  MS3[MS3 Producción] -. "package-validated<br/>(solo rama dev, sin merge)" .-> MS5
   FE[App repartidor] -- "GET route/today<br/>POST start / deliver / fail" --> MS5
   MS5 -- "POST /api/v1/patients/contact-information<br/>directo, sin token" --> CS[MS1 ClinicService<br/>hoy mock de Postman]
   MS5 -. "outbox → 10 exchanges<br/>courier-*, route-*, delivery-*" .-> MQ{{RabbitMQ}}
   MQ -. "nurtricenter.default<br/>(sink, nadie consume)" .-> SINK[(historial)]
-  MS5 -- "PATCH delivery-result<br/>(gap X-01, no existe)" --> MS4[MS4 Calendario]
+  MQ -. "delivery-added-to-route · delivery-completed · delivery-failed<br/>ms4.delivery-* (PR #3 de MS4)" .-> MS4[MS4 Calendario]
 ```
-Todas las llamadas entrantes pasan por el gateway con el prefijo `/api/nurtricenter/**`. La arista "no existe" es una llamada REST que el diseño necesita y hoy nadie hace. Los paquetes entran por el evento `package-validated` de MS3; `POST /packages/deliveries` queda como entrada manual de respaldo.
+Todas las llamadas entrantes pasan por el gateway con el prefijo `/api/nurtricenter/**`. En `main` los paquetes entran **solo** por `POST /packages/deliveries`; el consumo de `package-validated` existe únicamente en la rama `dev`. MS4 cierra sus días a partir de los eventos `delivery-*` (no hay REST hacia MS4), siempre que el `PackageId` sea su `packId`.
 
 ## Stack y despliegue
 - **.NET 10**, Clean Architecture + DDD táctico (`Joseco.DDD.Core`), controladores con `Ardalis.ApiEndpoints`, MediatR 14, FluentValidation, EF Core 10 + Npgsql, Serilog, Scalar (solo en Development).
 - **BD propia en Neon** (Postgres gestionado), **no** el Postgres compartido de la plataforma. Las migraciones se aplican a mano (`dotnet ef database update`); no hay job de migración.
-- **Consul:** se registra como `nurtricenter` (no un nombre de dominio) → prefijo en el gateway `/api/nurtricenter`. El registro es opcional: solo se activa si `ServiceRegistration:ServiceDiscoveryAddress` tiene valor.
-- **Kernels:** solo `Nur.Tricenter.Integration` 1.2.0 (contratos; publica `Messages.Logistics` y consume `Messages.Contracting`). No usa `Access`, `Security` ni `Observability`.
+- **Consul:** se registra como `nurtricenter` con `ServiceId` `nurtricenter-1` (no un nombre de dominio) → prefijo en el gateway `/api/nurtricenter`. Esos valores los fija la configuración (`nurtricenter.compose.yml`, `docker-compose.yml`); si no se setean, el código usa `nurtricenter-service` como nombre e id (`ServiceRegistrationOptions.DefaultServiceId`). El registro es opcional: solo se activa si `ServiceRegistration:ServiceDiscoveryAddress` tiene valor.
+- **Kernels:** solo `Nur.Tricenter.Integration` **1.1.0** (`contracts/Nurtricenter.Contracts.csproj`; publica `Messages.Logistics`, no consume nada). No usa `Access`, `Security` ni `Observability`. La rama `dev` lo sube a 1.2.0 para consumir `Messages.Contracting` (sin merge).
 
 | | Standalone (`docker-compose.yml`) | Plataforma (`nurtricenter.compose.yml`) |
 |---|---|---|
@@ -59,13 +59,13 @@ Todas las llamadas entrantes pasan por el gateway con el prefijo `/api/nurtricen
 | ClinicService | por variable de entorno | mock de Postman (`ClinicService__BaseUrl`) |
 | RabbitMQ | `host.docker.internal:5672` | `nur-tricenter-rabbitmq:5672` |
 
-- **Procesos en plataforma:** `nurtricenter-api` (puerto 8080, se registra en Consul) y `nurtricenter-workerservice` (outbox → RabbitMQ y declaración de `nurtricenter.default`; no se registra en Consul).
+- **Procesos en plataforma:** `nurtricenter-api` (puerto 8080, se registra en Consul) y `nurtricenter-workerservice` (solo productor: outbox → RabbitMQ y declaración de `nurtricenter.default`; no registra consumidores ni se registra en Consul). Los dos leen `ConnectionStrings__DefaultConnection` del `.env` (gitignored); sin ese archivo arrancan y fallan en la primera consulta.
 
 ## Índice de la ficha
 - [domain.md](./domain.md): modelo de dominio, estados e invariantes
 - [api.md](./api.md): endpoints expuestos
 - [integrations.md](./integrations.md): llamadas síncronas salientes
-- [messaging.md](./messaging.md): eventos publicados y el único consumido (`package-validated`)
+- [messaging.md](./messaging.md): eventos publicados (en `main` no consume ninguno)
 - [flows.md](./flows.md): casos de uso de punta a punta
 - [gaps.md](./gaps.md): deuda, inconsistencias y dependencias
 - [service.yaml](./service.yaml): datos estructurados (los usa la app visual)
