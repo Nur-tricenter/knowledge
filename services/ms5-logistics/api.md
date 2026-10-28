@@ -7,14 +7,14 @@
 - **Enums en las respuestas:** **no son uniformes.** `POST /couriers` y `POST /routes` devuelven `status` como **número** (no hay `JsonStringEnumConverter`); los demás lo devuelven como texto (`"InProgress"`, `"Delivered"`), y `POST /packages/deliveries` en minúsculas (`"pending"`).
 - **Ids:** todos los ids propios son `Guid`. `patientId` y `packageId` son texto libre.
 - **Documentación interactiva:** Scalar en `/scalar/v1` y OpenAPI en `/openapi/v1.json`, **solo** con `ASPNETCORE_ENVIRONMENT=Development`.
-- **Llamadores:** hoy **ningún servicio** llama a MS5 desde código. La columna "Llamado por" indica el llamador **esperado** según el dominio (ver gaps ms5-gap-03).
+- **Llamadores:** hoy **ningún servicio** llama a MS5 por REST desde código. La columna "Llamado por" indica el llamador **esperado** según el dominio. Los paquetes de MS3 llegan por evento (`package-validated`), no por REST.
 
 ## Resumen
 | Método | Ruta | Llamado por (esperado) | Scope | Idempotente |
 |---|---|---|---|---|
 | POST | `/couriers` | Operaciones | — (anónimo) | no (cada llamada crea un repartidor) |
 | POST | `/routes` | Operaciones | — (anónimo) | no (cada llamada crea una ruta) |
-| POST | `/packages/deliveries` | MS3 (a reemplazar por un evento de MS3) | — (anónimo) | no (duplica entregas) |
+| POST | `/packages/deliveries` | Operaciones (respaldo manual; MS3 usa el evento `package-validated`) | — (anónimo) | no (duplica entregas) |
 | GET | `/couriers/{courierId}/route/today` | App del repartidor | — (anónimo) | sí |
 | POST | `/routes/{routeId}/start` | App del repartidor | — (anónimo) | no (el 2.º intento da 422) |
 | POST | `/routes/{routeId}/deliveries/{deliveryId}/deliver` | App del repartidor | — (anónimo) | no (el 2.º intento da 422) |
@@ -66,7 +66,7 @@ No impide crear dos rutas para el mismo repartidor y la misma fecha. Publica `ro
 
 ### `POST /api/v1/packages/deliveries`
 **Para qué:** entregarle a logística los paquetes que hay que repartir **hoy**. Cada ítem se convierte en una `Delivery` `Pending`.
-**Llamado por:** **nadie hoy.** El origen de los paquetes es MS3 (producción), y el equipo decidió que MS3 los informe **por evento**, que MS5 consumirá. Ese contrato todavía no está en el kernel, así que este endpoint es la única entrada disponible.
+**Llamado por:** nadie desde código. Es la **entrada manual de respaldo**: los paquetes de MS3 llegan por el evento `package-validated`, que el worker procesa con la misma regla de ruta pero **sin** el chequeo de pacientes en MS1 (ver [messaging.md](./messaging.md)).
 **Scope:** ninguno.
 
 Request (un **array**, no un objeto):

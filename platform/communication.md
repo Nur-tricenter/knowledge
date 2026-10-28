@@ -117,7 +117,7 @@ Fuente: el código de cada repo a la fecha. La futura app visual la va a generar
 | Frontend → MS4 | REST | direcciones, reprogramar, cancelar, consultar | MS4 lo expone; frontend sin repo |
 | MS4 → MS2 | REST + service account | `GET /api/catalog/v1/meal-plans/{id}` | funcionando |
 | MS5 → MS4 | REST | `PATCH /delivery-result` | **MS5 no lo llama todavía** (X-01) |
-| MS3 → MS5 | evento | `package-validated`: un paquete aprobado por calidad, con dirección, tracking y coordenadas | MS3 publica y el contrato está en el kernel (1.2.0, sin publicar); **MS5 no lo consume todavía** (X-10) |
+| MS3 → MS5 | evento | `package-validated`: un paquete aprobado por calidad, con dirección, tracking y coordenadas | MS3 publica (kernel 1.2.0); **MS5 lo consume** y agrega el paquete a la ruta de hoy (X-10 parcial: falta el `packId` de MS4) |
 | Operaciones / app repartidor → MS5 | REST | repartidores, rutas, iniciar, entregar, fallar | MS5 lo expone **sin autenticación** (X-03); sin clientes en la org |
 | MS5 → ClinicService | REST directo, sin token | `POST /api/v1/patients/contact-information` | contra un mock de Postman |
 | MS2 → todos | eventos | food/recipe/meal-plan (5 exchanges) | publicado; MS4 consume 2 |

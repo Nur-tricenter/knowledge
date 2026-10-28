@@ -10,7 +10,7 @@ status: complete
 summary: >-
   Última milla de la plataforma: registra repartidores, arma la ruta del día de cada uno, ordena las
   paradas desde la sucursal y registra cada entrega (foto y firma) o su fallo. Publica 10 eventos de
-  logística vía outbox; no consume eventos y hoy no avisa el resultado a MS4.
+  logística vía outbox, consume package-validated de MS3 y hoy no avisa el resultado a MS4.
 stack: [.NET 10, Clean Architecture, DDD (Joseco.DDD.Core), Ardalis.ApiEndpoints, MediatR, FluentValidation, EF Core, PostgreSQL (Neon), RabbitMQ (Joseco), Consul]
 
 runtime:
@@ -46,8 +46,8 @@ endpoints:
   - method: POST
     path: /api/v1/packages/deliveries
     scope: null
-    callers: [ms3]
-    summary: Recibe un array de paquetes, valida los pacientes en MS1 y los agrega a la ruta de hoy más reciente. Hoy nadie lo llama; MS3 lo reemplazará por un evento (sin contrato aún). Anónimo.
+    callers: [ops]
+    summary: Respaldo manual del evento package-validated. Recibe un array de paquetes, valida los pacientes en MS1 y los agrega a la ruta de hoy más reciente. Anónimo.
     idempotent: false
   - method: GET
     path: /api/v1/couriers/{courierId}/route/today
@@ -141,7 +141,13 @@ events_published:
     trigger: Entrega fallida (POST …/fail) o cada entrega abierta al cancelar una ruta.
     outbox: true
 
-events_consumed: []
+events_consumed:
+  - queue: ms5.package-validated
+    exchange: package-validated
+    contract: PackageValidated
+    handler: PackageValidatedConsumer
+    effect: Agrega el paquete aprobado por calidad como Delivery Pending a la ruta de hoy más reciente; sin coordenadas usa las de la sucursal. No consulta a MS1.
+    idempotent: true
 
 gaps:
   - id: ms5-gap-01
@@ -152,8 +158,8 @@ gaps:
     severity: high
     blocked_by: ms4
   - id: ms5-gap-03
-    summary: Nadie llama a POST /packages/deliveries y el evento de MS3 con los paquetes producidos (decidido) no existe en el kernel.
-    severity: high
+    summary: Los paquetes llegan por package-validated, pero su PackageId es el de MS3 y no el packId de MS4; sin ruta de hoy el mensaje termina en dead-letter.
+    severity: medium
     blocked_by: ms3
   - id: ms5-gap-04
     summary: Los 10 exchanges no tienen colas de consumidor; solo el sink nurtricenter.default los recibe.

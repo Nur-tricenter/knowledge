@@ -42,14 +42,15 @@ sequenceDiagram
   Note over MQ: solo nurtricenter.default está enlazada: nadie reacciona
 ```
 
-## F2 — Recibir los paquetes del día (MS3 → MS5 → ClinicService)
-- **Actor:** MS3 (producción), con lo que produjo para hoy. **Hoy no hay llamador implementado**, y el diseño acordado es que MS3 lo informe **por evento** (contrato aún no definido en el kernel): cuando exista, un consumidor del worker de MS5 ejecutará este mismo caso de uso (gap X-10).
-- **Disparador:** `POST /api/v1/packages/deliveries` con un array de paquetes.
-- **Precondición:** que exista al menos una ruta con fecha de hoy.
-- **Camino feliz:**
-  1. Pide a ClinicService el contacto de los `patientId` distintos del lote.
-  2. Si están todos, toma la ruta de hoy **creada más recientemente** (de cualquier repartidor).
-  3. Agrega una `Delivery` `Pending` por paquete → un `delivery-added-to-route` por ítem.
+## F2 — Recibir los paquetes del día (MS3 ⇢ RabbitMQ ⇢ MS5)
+- **Actor:** MS3 (producción), cuando su control de calidad aprueba un paquete.
+- **Disparador:** evento `package-validated` (contrato `PackageValidated`, kernel 1.2.0) en la cola `ms5.package-validated`, uno por paquete. Respaldo manual: `POST /api/v1/packages/deliveries` (con chequeo de pacientes en MS1).
+- **Precondición:** que exista al menos una ruta con fecha de hoy (las crea el administrador).
+- **Camino feliz (evento):**
+  1. `TracingConsumer → IdempotentConsumer`: si el `Id` del mensaje ya está en `InboxMessages`, se descarta.
+  2. `PackageValidatedConsumer` arma `AddValidatedPackageCommand`: `PackageId`/`PatientId` como texto, `TrackingNumber` como datos de etiqueta (o el `PackageId` si viene vacío).
+  3. Toma la ruta de hoy **creada más recientemente** (de cualquier repartidor) y agrega una `Delivery` `Pending`. Sin coordenadas → usa las de la sucursal.
+  4. Una sola transacción guarda la fila del inbox, la entrega y la fila del outbox de `delivery-added-to-route`.
 - **Errores:**
   | Situación | Resultado |
   |---|---|
