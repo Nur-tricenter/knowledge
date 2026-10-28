@@ -2,7 +2,7 @@
 
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
-| ms4-gap-01 | MS5 no informa el resultado de la entrega | high | MS5 | abierto (X-01) |
+| ms4-gap-01 | El resultado de la entrega solo cierra el día si `PackageId` es el `packId` de MS4 | high | MS3, MS5 | parcial (X-01, X-10) |
 | ms4-gap-02 | Sin autorización por objeto (BOLA) | high | identity / MS1 | abierto (X-08) |
 | ms4-gap-03 | Job diario de catálogo con disparo manual | medium | — | abierto |
 | ms4-gap-04 | `InProduction` nunca se asigna | low | MS3 | abierto |
@@ -10,10 +10,10 @@
 
 ## Detalle
 
-### ms4-gap-01 — El ciclo no se cierra
-- **Qué pasa:** el único camino a `Delivered`/`Failed` es `PATCH /delivery-result`, y MS5 no lo llama.
-- **Impacto:** ningún día llega a un estado final de entrega, el calendario nunca se completa y la evidencia nunca llega a MS4.
-- **Qué haría falta:** decidirlo con un ADR (ver X-01 en [gaps transversales](../../gaps/cross-service-gaps.md)): MS5 llama al endpoint con una service account, o MS4 consume `delivery-completed`/`delivery-failed`. Esto último requiere que el evento lleve el `dayId` de MS4.
+### ms4-gap-01 — El ciclo solo se cierra si `PackageId` es el `packId`
+- **Qué pasa:** MS5 ya publica `delivery-added-to-route`, `delivery-completed` y `delivery-failed`, y MS4 los consume para pasar el día a `Delivered`/`Failed` (cambio en MS4#3, pendiente de merge; colas en nur-tricenter-local#6, también pendiente). `DeliveryCompleted` y `DeliveryFailed` solo traen `DeliveryId`, así que MS4 depende de `DeliveryAddedToRoute.PackageId` para saber de qué día se trata.
+- **Impacto:** hoy MS3 manda su propio GUID como `PackageId` (ms3-gap-03), MS4 no lo reconoce y descarta el evento con un warning: los días siguen en `ReadyForProduction`. La evidencia (foto, firma) tampoco llega: el evento solo trae la hora de entrega.
+- **Qué haría falta:** que MS3 envíe el `packId` de MS4 en `PackageValidated.PackageId` y que MS5 lo conserve como `PackageId` de la entrega (X-10); y, si se quiere evidencia, sumar foto y firma a `DeliveryCompleted` en el kernel. `PATCH /delivery-result` sigue disponible como vía manual.
 
 ### ms4-gap-02 — Cualquier paciente puede editar cualquier calendario
 - **Qué pasa:** los scopes controlan el *tipo* de cliente, no la *propiedad*. Un token con `deliveryCalendar.calendar:edit` modifica cualquier calendario.

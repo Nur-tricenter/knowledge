@@ -81,13 +81,15 @@ sequenceDiagram
   Note over MS3: produce en cocina
 ```
 
-## F5 — Cierre del ciclo: resultado de la entrega (MS5 → MS4) ⚠ pendiente en MS5
+## F5 — Cierre del ciclo: resultado de la entrega (MS5 → MS4) ⚠ depende de que `PackageId` sea el `packId`
 - **Actor:** MS5, después de cada intento de entrega.
-- **Disparador:** `PATCH /api/v1/calendars/days/{dayId}/delivery-result`
+- **Disparador (camino normal):** los eventos `delivery-added-to-route` (enlaza la entrega con el día) y luego `delivery-completed` / `delivery-failed` (cierran el día). Ver [messaging.md](./messaging.md).
+- **Disparador (vía manual):** `PATCH /api/v1/calendars/days/{dayId}/delivery-result`
 - **Camino feliz:** `ReadyForProduction` (o `InProduction`) → `Delivered`/`Failed`, guardando la evidencia (foto, firma y momento).
 - **Errores:** 404 si el día no existe; 422 si el día no estaba listo o si se envía un resultado distinto al ya aplicado.
 - **Idempotencia:** repetir el mismo resultado es un no-op. Así un reintento de MS5 no rompe el estado.
-- **Estado real:** MS5 registra entregas pero **no llama a este endpoint** (gap X-01). Los días se quedan en `ReadyForProduction`.
+- **Estado real:** MS5 ya publica los tres eventos y MS4 los consume (pendiente de merge). Pero el `PackageId` que MS5 recibe de MS3 es hoy un GUID de MS3, no el `packId`: MS4 no encuentra el día y descarta el evento con un warning (ms3-gap-03, X-10). Hasta que MS3 mande el `packId`, los días se quedan en `ReadyForProduction`.
+- **Errores en el camino por eventos:** entrega sin enlace, día inexistente o transición inválida (por ejemplo, día cancelado) → warning y mensaje confirmado, sin reintentos.
 
 ```mermaid
 sequenceDiagram
@@ -99,6 +101,23 @@ sequenceDiagram
   MS4-->>MS5: 200 { dayId: 101, status: Delivered }
   MS5->>GW: (reintento por timeout) mismo PATCH
   MS4-->>MS5: 200 { dayId: 101, status: Delivered } (sin cambios)
+```
+
+Camino por eventos (cuando `PackageId` = `packId`):
+
+```mermaid
+sequenceDiagram
+  participant MS5
+  participant MQ as RabbitMQ
+  participant W as MS4 WorkerService
+  MS5-)MQ: delivery-added-to-route {deliveryId, packageId: 101}
+  MQ-)W: ms4.delivery-added-to-route
+  W->>W: DeliveryRouteLinks[deliveryId] = día 101
+  MS5-)MQ: delivery-completed {deliveryId, deliveredAt}
+  MQ-)W: ms4.delivery-completed
+  W->>W: día 101 → Delivered
+  MQ-)W: (mismo mensaje, redelivery)
+  W->>W: inbox: ya procesado, se omite
 ```
 
 ## F6 — Reaccionar a cambios del catálogo (MS2 ⇢ MS4, asíncrono)

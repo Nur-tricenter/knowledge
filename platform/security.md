@@ -43,7 +43,7 @@ Usuarios técnicos para las llamadas servicio → servicio, con **mínimo privil
 | `ms4-service` | MS4 | `catalog.mealPlan:read` | Leer la composición del plan en MS2 |
 | `ms3-service` | MS3 | `deliveryCalendar.calendar:create`, `deliveryCalendar.productionOrder:read` | Crear el calendario de un contrato y leer la orden de producción en MS4 |
 
-MS5 **no tiene service account**: su única llamada saliente (ClinicService, hoy un mock de Postman) va sin token, y no llama a MS4. Si se cierra X-01 por REST, haría falta `ms5-service` con el scope `deliveryCalendar.deliveryResult:edit`.
+MS5 **no tiene service account**: su única llamada saliente (ClinicService, hoy un mock de Postman) va sin token, y no llama a MS4 (el cierre del ciclo va por eventos que MS4 consume). Si se prefiriera cerrar X-01 por REST, haría falta `ms5-service` con el scope `deliveryCalendar.deliveryResult:edit`.
 
 Cuando agregues una service account, documéntala aquí y en el `service.yaml` (`sync_calls[].auth: service-account:<cuenta>`).
 

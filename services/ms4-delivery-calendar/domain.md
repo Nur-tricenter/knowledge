@@ -122,7 +122,7 @@ stateDiagram-v2
 | No reprogramar ni cancelar a menos de 48h | `DeliveryDay.EnsureOutsideLockWindow` | `DeliveryWindowLockedException` → 409 |
 | Reprogramar solo en Pending/Scheduled | `DeliveryDay.Reschedule` | → 422 |
 | No pasar a producción con el menú vacío | `DeliveryDay.MarkReadyForProduction` | `ArgumentException` |
-| Delivered/Failed solo vía MS5 (`delivery-result`) | No existe otro método que lo asigne | — |
+| Delivered/Failed solo vía MS5 (`delivery-result` o sus eventos `delivery-completed`/`delivery-failed`) | No existe otro método que lo asigne | — |
 | Resultado de entrega idempotente; un resultado distinto sobre un día cerrado es inválido | `DeliveryDay.ApplyDeliveryResult` | → 422 |
 | Coordenadas en rango (lat ±90, long ±180) | VO `Coordinates` | → 422 |
 

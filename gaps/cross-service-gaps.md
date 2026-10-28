@@ -5,7 +5,7 @@ Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04,
 
 | Id | Gap | Severidad | Servicios | Estado |
 |---|---|---|---|---|
-| X-01 | MS5 no llama a `PATCH /delivery-result` de MS4 | high | MS5, MS4 | abierto |
+| X-01 | El ciclo de entrega solo cierra si `PackageId` es el `packId` de MS4 | high | MS3, MS5, MS4 | parcial |
 | X-02 | Los 10 exchanges de logística no tienen colas enlazadas | medium | MS5, consumidores | abierto |
 | X-03 | MS5 no valida JWT ni tiene scopes en el kernel | high | MS5, kernels | abierto |
 | X-04 | No hay repo de MS1 en la org (y MS3 usa pacientes simulados) | high | MS1, MS3 | abierto |
@@ -20,6 +20,8 @@ Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04,
 ## Detalle
 
 ### X-01 — El ciclo de entrega no se cierra
+> **Actualización 2026-10-28:** se eligió la opción (b). MS5 ya publica `delivery-added-to-route`, `delivery-completed` y `delivery-failed`, y MS4 los consume ([MS4#3](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/3) y las colas `ms4.delivery-*` en [nur-tricenter-local#6](https://github.com/Nur-tricenter/nur-tricenter-local/pull/6), ambos pendientes de merge). **Queda abierto** porque MS3 manda su propio GUID como `PackageId` (X-10, ms3-gap-03) y MS4 solo reconoce el `packId`; además `DeliveryCompleted` no lleva evidencia. El texto de abajo es el análisis original.
+
 MS4 expone `PATCH /api/v1/calendars/days/{dayId}/delivery-result` (scope `deliveryCalendar.deliveryResult:edit`), que es el **único** camino para que un día pase a `Delivered`/`Failed`. MS5 registra entregas y fallos (`/deliver`, `/fail`) y publica `delivery-completed`/`delivery-failed`, pero no llama a MS4 ni nadie consume esos eventos. **Impacto:** todos los días quedan en `ReadyForProduction` para siempre.
 
 **Confirmado por MS5 (2026-10-24):** MS5 no tiene cliente HTTP hacia MS4 ni service account, y **no conoce el `dayId`**. Su entrega solo guarda un `PackageId` de texto libre que trae quien llama a `POST /packages/deliveries` (y hoy nadie lo llama: X-10). Los eventos tampoco ayudan: `DeliveryCompleted` lleva `DeliveryId, RouteId, DeliveredAt` (sin `PackageId` ni evidencia) y `DeliveryFailed` lleva `DeliveryId, RouteId, Reason`. Cualquiera de las dos opciones necesita primero que `PackageId` sea el `packId` de MS4 (= `DeliveryDayId`).

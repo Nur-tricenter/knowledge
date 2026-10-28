@@ -81,6 +81,7 @@ Pasa el día de `Pending` a `Scheduled`. Se puede repetir para corregir la direc
 - Repetir el **mismo** resultado no hace nada y devuelve el estado actual (tolera los reintentos de MS5).
 - Un resultado **distinto** sobre un día ya cerrado → `422`.
 - Busca solo por `dayId` (el contrato no incluye `calendarId`).
+- Es la vía manual: el camino normal son los eventos `delivery-completed` y `delivery-failed` de MS5, que aplican la misma regla (ver [messaging.md](./messaging.md)).
 
 ### `POST /api/v1/calendars/resolve-daily-catalog?date=YYYY-MM-DD`
 Herramienta de operaciones (no es parte del contrato público). Ver el flujo F3 en [flows.md](./flows.md). Responde `204`.

@@ -71,7 +71,7 @@ endpoints:
     path: /api/v1/calendars/days/{dayId}/delivery-result
     scope: deliveryCalendar.deliveryResult:edit
     callers: [ms5]
-    summary: Registra DELIVERED o FAILED con evidencia. Único camino a Delivered/Failed. Repetir el mismo resultado no hace nada.
+    summary: Registra DELIVERED o FAILED con evidencia. Vía manual; el camino normal son los eventos delivery-completed y delivery-failed de MS5. Repetir el mismo resultado no hace nada.
     idempotent: true
   - method: POST
     path: /api/v1/calendars/resolve-daily-catalog
@@ -117,12 +117,30 @@ events_consumed:
     handler: RecipeUpdatedConsumer
     effect: Renombra la receta en el menú de los días que aún no se cerraron (no Delivered, Failed ni Cancelled).
     idempotent: true
+  - queue: ms4.delivery-added-to-route
+    exchange: delivery-added-to-route
+    contract: DeliveryAddedToRoute
+    handler: DeliveryAddedToRouteConsumer
+    effect: Guarda en DeliveryRouteLinks la relación DeliveryId de MS5 → día de MS4 (PackageId = packId = DeliveryDay.Id). Un PackageId no numérico se ignora.
+    idempotent: true
+  - queue: ms4.delivery-completed
+    exchange: delivery-completed
+    contract: DeliveryCompleted
+    handler: DeliveryCompletedConsumer
+    effect: Busca el día por DeliveryRouteLinks y lo pasa a Delivered (evidencia = DeliveredAt). Si no hay enlace, el día no existe o la transición es inválida, registra un warning y confirma el mensaje.
+    idempotent: true
+  - queue: ms4.delivery-failed
+    exchange: delivery-failed
+    contract: DeliveryFailed
+    handler: DeliveryFailedConsumer
+    effect: Igual que delivery-completed, pero el día pasa a Failed.
+    idempotent: true
 
 gaps:
   - id: ms4-gap-01
-    summary: MS5 no llama a delivery-result; los días nunca llegan a Delivered/Failed.
+    summary: MS4 ya consume los eventos de entrega de MS5 (PR #3, pendiente de merge), pero solo cierra días si PackageId es el packId de MS4; MS3 manda hoy su propio GUID.
     severity: high
-    blocked_by: ms5
+    blocked_by: ms3
   - id: ms4-gap-02
     summary: Sin autorización por objeto; un token con calendar:edit edita el calendario de cualquier paciente.
     severity: high
