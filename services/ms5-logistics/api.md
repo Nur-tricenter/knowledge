@@ -7,14 +7,14 @@
 - **Enums en las respuestas:** **no son uniformes.** `POST /couriers` y `POST /routes` devuelven `status` como **número** (no hay `JsonStringEnumConverter`); los demás lo devuelven como texto (`"InProgress"`, `"Delivered"`), y `POST /packages/deliveries` en minúsculas (`"pending"`).
 - **Ids:** todos los ids propios son `Guid`. `patientId` y `packageId` son texto libre.
 - **Documentación interactiva:** Scalar en `/scalar/v1` y OpenAPI en `/openapi/v1.json`, **solo** con `ASPNETCORE_ENVIRONMENT=Development`.
-- **Llamadores:** hoy **ningún servicio** llama a MS5 por REST desde código. La columna "Llamado por" indica el llamador **esperado** según el dominio. Los paquetes de MS3 llegan por evento (`package-validated`), no por REST.
+- **Llamadores:** hoy **ningún servicio** llama a MS5 por REST desde código. La columna "Llamado por" indica el llamador **esperado** según el dominio. En `main` los paquetes entran **solo** por `POST /packages/deliveries` (el consumo del evento `package-validated` de MS3 existe únicamente en la rama `dev`, sin merge).
 
 ## Resumen
 | Método | Ruta | Llamado por (esperado) | Scope | Idempotente |
 |---|---|---|---|---|
 | POST | `/couriers` | Operaciones | — (anónimo) | no (cada llamada crea un repartidor) |
 | POST | `/routes` | Operaciones | — (anónimo) | no (cada llamada crea una ruta) |
-| POST | `/packages/deliveries` | Operaciones (respaldo manual; MS3 usa el evento `package-validated`) | — (anónimo) | no (duplica entregas) |
+| POST | `/packages/deliveries` | Operaciones (única entrada de paquetes en `main`) | — (anónimo) | no (duplica entregas) |
 | GET | `/couriers/{courierId}/route/today` | App del repartidor | — (anónimo) | sí |
 | POST | `/routes/{routeId}/start` | App del repartidor | — (anónimo) | no (el 2.º intento da 422) |
 | POST | `/routes/{routeId}/deliveries/{deliveryId}/deliver` | App del repartidor | — (anónimo) | no (el 2.º intento da 422) |
@@ -66,7 +66,7 @@ No impide crear dos rutas para el mismo repartidor y la misma fecha. Publica `ro
 
 ### `POST /api/v1/packages/deliveries`
 **Para qué:** entregarle a logística los paquetes que hay que repartir **hoy**. Cada ítem se convierte en una `Delivery` `Pending`.
-**Llamado por:** nadie desde código. Es la **entrada manual de respaldo**: los paquetes de MS3 llegan por el evento `package-validated`, que el worker procesa con la misma regla de ruta pero **sin** el chequeo de pacientes en MS1 (ver [messaging.md](./messaging.md)).
+**Llamado por:** nadie desde código; lo usa operaciones a mano. En `main` es la **única** forma de cargar paquetes. Para que MS4 pueda cerrar el día, `packageId` tiene que ser el `packId` de MS4 (de `active-tomorrow`); MS5 no lo valida (ms5-gap-02). La rama `dev` agrega además el consumo del evento `package-validated` (ver [messaging.md](./messaging.md)).
 **Scope:** ninguno.
 
 Request (un **array**, no un objeto):
@@ -159,7 +159,7 @@ Response `200`:
 | 404 | `Route.NotFound` o `Route.DeliveryNotFound` (la entrega no es de esa ruta) |
 | 422 | `Delivery.CannotComplete` (ya era terminal: un reintento), o `Route.CannotComplete` (era la última entrega abierta de una ruta que nunca se inició; se revierte todo) |
 
-Publica `delivery-completed` y, si era la última entrega abierta, también `route-completed`. **No avisa a MS4** (gap X-01).
+Publica `delivery-completed` y, si era la última entrega abierta, también `route-completed`. No llama a MS4: MS4 consume el evento (cola `ms4.delivery-completed`, PR #3 de MS4 sin merge), sin la evidencia.
 
 ### `POST /api/v1/routes/{routeId}/deliveries/{deliveryId}/fail`
 **Para qué:** registrar que no se pudo entregar y por qué.

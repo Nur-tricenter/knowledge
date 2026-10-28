@@ -1,6 +1,6 @@
 # Flujos — MS5
 
-El orden sigue el día de un repartidor. Todos los flujos cruzan al menos una frontera: el gateway, ClinicService o RabbitMQ. F5 describe la integración que **falta** con MS4.
+El orden sigue el día de un repartidor. Todos los flujos cruzan al menos una frontera: el gateway, ClinicService o RabbitMQ. F5 describe cómo MS4 recibe el resultado por eventos y lo que todavía falta.
 
 ## F1 — Alta de repartidor y de su ruta (Operaciones → MS5 ⇢ RabbitMQ)
 - **Actor:** operaciones / logística.
@@ -42,15 +42,14 @@ sequenceDiagram
   Note over MQ: solo nurtricenter.default está enlazada: nadie reacciona
 ```
 
-## F2 — Recibir los paquetes del día (MS3 ⇢ RabbitMQ ⇢ MS5)
-- **Actor:** MS3 (producción), cuando su control de calidad aprueba un paquete.
-- **Disparador:** evento `package-validated` (contrato `PackageValidated`, kernel 1.2.0) en la cola `ms5.package-validated`, uno por paquete. Respaldo manual: `POST /api/v1/packages/deliveries` (con chequeo de pacientes en MS1).
+## F2 — Recibir los paquetes del día (Operaciones → MS5 → ClinicService)
+- **Actor:** operaciones / logística.
+- **Disparador:** `POST /api/v1/packages/deliveries` con un array de paquetes. En `main` es la **única** entrada: el consumo del evento `package-validated` de MS3 existe solo en la rama `dev`, sin merge (ms5-gap-03).
 - **Precondición:** que exista al menos una ruta con fecha de hoy (las crea el administrador).
-- **Camino feliz (evento):**
-  1. `TracingConsumer → IdempotentConsumer`: si el `Id` del mensaje ya está en `InboxMessages`, se descarta.
-  2. `PackageValidatedConsumer` arma `AddValidatedPackageCommand`: `PackageId`/`PatientId` como texto, `TrackingNumber` como datos de etiqueta (o el `PackageId` si viene vacío).
-  3. Toma la ruta de hoy **creada más recientemente** (de cualquier repartidor) y agrega una `Delivery` `Pending`. Sin coordenadas → usa las de la sucursal.
-  4. Una sola transacción guarda la fila del inbox, la entrega y la fila del outbox de `delivery-added-to-route`.
+- **Camino feliz:**
+  1. Pide a ClinicService el contacto de todos los `patientId` distintos del lote: todos tienen que existir.
+  2. Toma la ruta de hoy **creada más recientemente** (de cualquier repartidor) y agrega una `Delivery` `Pending` por ítem.
+  3. Una sola transacción guarda las entregas y una fila de outbox de `delivery-added-to-route` por ítem. Si `packageId` es el `packId` de MS4, MS4 vincula la entrega con su día al consumir ese evento.
 - **Errores:**
   | Situación | Resultado |
   |---|---|
@@ -131,26 +130,27 @@ sequenceDiagram
   W->>DB: filas pendientes
   W--)MQ: DeliveryCompleted → delivery-completed
   W--)MQ: RouteCompleted → route-completed (si aplica)
-  Note over MQ: MS4 no tiene cola: su DeliveryDay sigue en ReadyForProduction (X-01)
+  Note over MQ: MS4 lo consume por ms4.delivery-completed (PR #3 de MS4, sin merge) y cierra el día si el PackageId era su packId
 ```
 
-## F5 — Avisar el resultado a MS4 ⚠ no implementado
-- **Actor:** MS5, después de cada entrega o fallo.
-- **Qué debería pasar:** el `DeliveryDay` de MS4 tendría que pasar a `Delivered`/`Failed` con la evidencia. MS4 expone `PATCH /api/v1/calendars/days/{dayId}/delivery-result` (scope `deliveryCalendar.deliveryResult:edit`) e idempotente.
-- **Estado real:** MS5 no llama a MS4, no tiene service account y **no conoce el `dayId`**: su entrega solo guarda `PackageId` (texto libre del llamador). Los eventos `delivery-completed`/`delivery-failed` tampoco llevan ese dato y no hay cola `ms4.*` para ellos.
-- **Dos caminos posibles** (decidir con un ADR, ver X-01):
-  | Opción | Qué cambia en MS5 |
+## F5 — El resultado llega a MS4 por eventos (MS5 ⇢ RabbitMQ ⇢ MS4) ⚠ parcial
+- **Actor:** MS5 (publica) y MS4 (consume). MS5 no hace nada específico para MS4: publica sus eventos de siempre.
+- **Cómo funciona:** MS4 consume `delivery-added-to-route`, `delivery-completed` y `delivery-failed` por las colas `ms4.delivery-added-to-route`, `ms4.delivery-completed` y `ms4.delivery-failed` (topología mergeada en nur-tricenter-local#6; código de MS4 en el PR Nur-tricenter/ms4-delivery-schedule-management#3, **pendiente de merge**). Al recibir `delivery-added-to-route` guarda el vínculo `DeliveryId` (de MS5) → `DeliveryDay`, leyendo `PackageId` como su `packId`. Después, `delivery-completed`/`delivery-failed` (que solo traen `DeliveryId`) le alcanzan para cerrar el día. No hay llamada REST: MS5 no usa `PATCH /delivery-result` ni tiene service account.
+- **Lo que falta:**
+  | Situación | Resultado |
   |---|---|
-  | (a) REST | Service account `ms5-service`, login en identity, `PATCH` vía gateway en el handler de `deliver`/`fail` (o en un handler del outbox, para no acoplar la respuesta al repartidor con la disponibilidad de MS4). El `PackageId` tendría que ser el `packId` de MS4 |
-  | (b) Eventos | Agregar `PackageId` (o el `dayId`) a `DeliveryCompleted`/`DeliveryFailed` en el kernel, más la evidencia para `Delivered`; pedir colas `ms4.delivery-completed` y `ms4.delivery-failed` en `nur-tricenter-local` |
+  | El `PackageId` cargado en MS5 no es el `packId` de MS4 (texto libre en `POST /packages/deliveries`; el id de MS3 si llega por el consumidor de `dev`) | MS4 no vincula la entrega: el día queda en `ReadyForProduction` (ms5-gap-02) |
+  | PR #3 de MS4 sin merge | Nadie lee las colas `ms4.delivery-*`: los mensajes se acumulan |
+  | Entrega exitosa | La evidencia (foto, firma) no viaja en `DeliveryCompleted`: queda solo en MS5 |
 
 ```mermaid
 sequenceDiagram
-  participant MS5
-  participant GW as Gateway
-  participant MS4
-  Note over MS5,MS4: Opción (a) — hoy NO existe
-  MS5->>GW: PATCH /api/delivery-calendar/v1/calendars/days/{dayId}/delivery-result (Bearer ms5-service)
-  GW->>MS4: PATCH /api/v1/calendars/days/{dayId}/delivery-result
-  MS4-->>MS5: 200 { dayId, status: "Delivered" }
+  participant MS5 as MS5 Worker
+  participant MQ as RabbitMQ
+  participant MS4 as MS4 Worker
+  MS5--)MQ: DeliveryAddedToRoute { DeliveryId, PackageId = packId de MS4 }
+  MQ--)MS4: ms4.delivery-added-to-route → guarda DeliveryId → DeliveryDay
+  MS5--)MQ: DeliveryCompleted { DeliveryId, DeliveredAt }
+  MQ--)MS4: ms4.delivery-completed → DeliveryDay pasa a Delivered
+  Note over MS4: PR #3 de MS4 pendiente de merge
 ```

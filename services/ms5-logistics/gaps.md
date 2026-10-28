@@ -3,9 +3,9 @@
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
 | ms5-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels (`Nur.Tricenter.Access`) | abierto (X-03) |
-| ms5-gap-02 | No informa el resultado de la entrega a MS4 | high | MS4, kernels | abierto (X-01) |
-| ms5-gap-03 | Los paquetes llegan por `package-validated`, pero su `PackageId` no es el `packId` de MS4 | medium | MS3, MS4 | parcial (X-10) |
-| ms5-gap-04 | Los 10 eventos publicados no tienen consumidores | medium | consumidores | abierto (X-02) |
+| ms5-gap-02 | El cierre del día en MS4 depende de que el `PackageId` sea el `packId` de MS4 y de un consumidor de MS4 sin merge | high | MS4 | parcial (X-01) |
+| ms5-gap-03 | En `main` no consume `package-validated`: los paquetes se cargan a mano | medium | MS5 (merge de `dev`) | resuelto en `dev`, pendiente de merge (X-10) |
+| ms5-gap-04 | 7 de los 10 eventos publicados no tienen consumidores | low | consumidores | parcial (X-02) |
 | ms5-gap-05 | ClinicService es un mock de Postman, se llama directo, sin token y sin resiliencia | medium | MS1 | abierto (X-04) |
 | ms5-gap-06 | Los paquetes van a la última ruta de hoy de cualquier repartidor, y se duplican al reenviar | medium | — | abierto |
 | ms5-gap-07 | Casos de uso del dominio sin endpoint: 3 eventos inalcanzables y el repartidor nunca cambia de estado | medium | — | abierto |
@@ -13,7 +13,7 @@
 | ms5-gap-09 | La API de comandos no es idempotente (reintentos dan 422 o duplican) | medium | — | abierto |
 | ms5-gap-10 | "Hoy" se calcula con la hora local del servidor | low | — | abierto |
 | ms5-gap-11 | Faltan endpoints de lectura; los `Location` de los 201 apuntan a rutas inexistentes | low | — | abierto |
-| ms5-gap-12 | Siete colas `ms5.*` declaradas sin consumidor | low | nur-tricenter-local | abierto (X-06) |
+| ms5-gap-12 | Ocho colas `ms5.*` declaradas sin consumidor en `main` | low | nur-tricenter-local | abierto (X-06) |
 | ms5-gap-13 | Sin OpenTelemetry ni kernel de observabilidad | low | kernels | abierto |
 | ms5-gap-14 | Respuestas inconsistentes y un test de integración incompleto | low | — | abierto |
 
@@ -24,20 +24,21 @@
 - **Impacto:** a través del gateway, cualquiera puede crear repartidores y rutas, cargar paquetes y marcar entregas como entregadas o fallidas. Es el único servicio de negocio sin JWT.
 - **Qué haría falta:** agregar los scopes `logistics.*` al kernel (p. ej. `logistics.courier:create`, `logistics.route:{create,start,read}`, `logistics.delivery:{create,edit}`), llamar a `AddSecurity()` y exigir un scope por endpoint. Después, autorización por objeto: que un repartidor solo vea y opere **su** ruta (`sub` → `CourierId`).
 
-### ms5-gap-02 — El ciclo de entrega no se cierra en MS4
-- **Qué pasa:** MS5 registra entregas y fallos pero no llama a `PATCH /delivery-result` de MS4, y nadie consume `delivery-completed`/`delivery-failed`.
-- **Impacto:** los `DeliveryDay` de MS4 se quedan en `ReadyForProduction` para siempre; la evidencia (foto, firma) queda solo en MS5.
-- **Qué haría falta:** decidir con un ADR entre REST con service account `ms5-service` o eventos con colas `ms4.delivery-*` (ver F5 en [flows.md](./flows.md)). En los dos casos, MS5 necesita conocer el `dayId` de MS4: hoy solo tiene un `PackageId` de texto libre y los eventos no lo transportan.
+### ms5-gap-02 — El cierre del día en MS4 depende de un id que MS5 no controla
+- **Qué pasa:** MS5 no llama a `PATCH /delivery-result` de MS4. La decisión tomada es por eventos: MS4 consume `delivery-added-to-route` (para vincular el `DeliveryId` de MS5 con su día), `delivery-completed` y `delivery-failed` por las colas `ms4.delivery-added-to-route`, `ms4.delivery-completed` y `ms4.delivery-failed` (topología mergeada en nur-tricenter-local#6; el código de MS4 está en el PR Nur-tricenter/ms4-delivery-schedule-management#3, **pendiente de merge**). MS4 interpreta `DeliveryAddedToRoute.PackageId` como su `packId` (`DeliveryDay.Id`, un entero); si no lo es, no vincula la entrega.
+- **Impacto:** en `main` el `PackageId` es texto libre que trae `POST /packages/deliveries`: el día de MS4 solo se cierra si quien carga el lote usa el `packId` de `active-tomorrow`. MS5 no lo valida. Además `DeliveryCompleted` no lleva evidencia (foto, firma): queda solo en MS5. Mientras el PR de MS4 no se mergee, los `DeliveryDay` siguen en `ReadyForProduction`.
+- **Qué haría falta:** que el `packId` de MS4 viaje de punta a punta (en el contrato de `package-validated` o validado en `POST /packages/deliveries`) y, si MS4 la necesita, la evidencia en `DeliveryCompleted`.
 
-### ms5-gap-03 — Los paquetes llegan, pero sin vínculo con MS4
-- **Resuelto:** MS5 consume `package-validated` de MS3 (`PackageValidatedConsumer`, inbox idempotente) y agrega cada paquete a la ruta de hoy. `POST /packages/deliveries` queda como respaldo manual.
-- **Lo que queda:** `PackageValidated.PackageId` es el id del paquete de MS3, no el `packId` de MS4 (`ms3-gap-03`), así que MS5 sigue sin poder informar el resultado a MS4 (ms5-gap-02). Además, si no hay ruta para hoy el mensaje termina en la cola de error tras los reintentos: hay que crear la ruta y reencolarlo a mano.
-- **Qué haría falta:** agregar el `packId` de MS4 al contrato (cambio compatible en el kernel) y guardarlo en la entrega.
+### ms5-gap-03 — En `main` los paquetes no llegan por evento
+- **Qué pasa:** en `main` el worker es solo productor ("PURE PRODUCER" en `RabbitMqExtensions.cs`), no hay inbox y el kernel es `Nur.Tricenter.Integration` 1.1.0. Los paquetes entran **solo** por `POST /packages/deliveries`.
+- **Resuelto en `dev`, pendiente de merge:** la rama `dev` (4 commits por delante de `main`; el cambio entró a `dev` con el PR #2 del repo, `feat/consume-package-validated`) agrega `PackageValidatedConsumer` en la cola `ms5.package-validated` (pipeline `TracingConsumer → IdempotentConsumer → PackageValidatedConsumer`, tabla `InboxMessages`, comando `AddValidatedPackageCommand`, kernel 1.2.0). Ahí cada paquete se agrega a la ruta de hoy más reciente sin consultar a MS1; sin coordenadas usa las de la sucursal; sin ruta de hoy el mensaje termina en la cola de error tras los reintentos.
+- **Lo que quedará después del merge:** `PackageValidated.PackageId` es el id del paquete de MS3, no el `packId` de MS4 (`ms3-gap-03`), así que el consumidor de MS4 no podrá vincular esas entregas (ms5-gap-02).
+- **Qué haría falta:** mergear `dev` en `main` y agregar el `packId` de MS4 al contrato.
 
 ### ms5-gap-04 — Eventos sin destino
-- **Qué pasa:** los 10 exchanges existen en la topología, pero ninguna cola de consumidor está enlazada a ellos. Solo los recibe el sink `nurtricenter.default`, que nadie lee.
-- **Impacto:** los eventos se guardan pero ningún servicio reacciona. No se pierden mientras el worker de MS5 haya declarado el sink.
-- **Qué haría falta:** que los consumidores interesados (MS4, MS3) pidan sus colas en `nur-tricenter-local`.
+- **Qué pasa:** los 10 exchanges existen en la topología. Desde nur-tricenter-local#6, `delivery-added-to-route`, `delivery-completed` y `delivery-failed` tienen las colas `ms4.delivery-*`. Los otros 7 (`courier-*`, `route-*`) solo los recibe el sink `nurtricenter.default`, que nadie lee.
+- **Impacto:** no se pierden mientras el worker de MS5 haya declarado el sink, pero ningún servicio reacciona a los eventos de repartidores y rutas.
+- **Qué haría falta:** que los consumidores interesados (p. ej. MS3 con `route-completed`) pidan sus colas en `nur-tricenter-local`.
 
 ### ms5-gap-05 — Dependencia síncrona frágil con ClinicService
 - **Qué pasa:** `ClinicService__BaseUrl` apunta a un mock de Postman; la llamada sale directo (no por el gateway), sin token, sin reintentos ni timeout propio. Los errores del destino se devuelven como **422** (y un timeout como 500). `PhoneNumber` se recibe y no se usa.
@@ -71,7 +72,7 @@
 No hay `GET` de repartidor, de ruta por id ni listados. Los `201 Created` devuelven `Location` hacia `/api/v1/couriers/{id}`, `/api/v1/routes/{id}` y `/api/v1/packages/deliveries/{routeId}`, que no existen.
 
 ### ms5-gap-12 — Colas sin consumidor
-`ms5.food-published`, `ms5.food-nutritional-info-updated`, `ms5.recipe-published`, `ms5.recipe-updated`, `ms5.meal-plan-published`, `ms5.user-published` y `ms5.user-updated` están en la topología y acumulan mensajes. MS5 no las necesita (lo que va a consumir son eventos de MS3): conviene quitarlas de la topología.
+`ms5.food-published`, `ms5.food-nutritional-info-updated`, `ms5.recipe-published`, `ms5.recipe-updated`, `ms5.meal-plan-published`, `ms5.user-published` y `ms5.user-updated` están en la topología y acumulan mensajes. MS5 no las necesita (lo que va a consumir son eventos de MS3): conviene quitarlas de la topología. La octava, `ms5.package-validated`, también acumula mensajes en `main`; la lee el consumidor de la rama `dev` (ms5-gap-03).
 
 ### ms5-gap-13 — Observabilidad
 No usa `Nur.Tricenter.Observability` ni exporta trazas. El `CorrelationId` de los eventos es el trace id del `Activity` de la petición, pero solo se ve en los logs de Serilog.
@@ -96,3 +97,9 @@ En esta ficha se documentó **el código**.
 | `docs/domain-model.md` (tabla de eventos) | `CourierCreatedEvent` lleva `Id` | Lleva `CourierId` |
 | `CLAUDE.md` del repo (sección CQRS) | Los comandos devuelven `Result`/`Result<T>` y las queries usan `AppDbContext` directamente | Los handlers devuelven DTOs y lanzan `DomainException`; `GetCourierTodayRouteHandler` usa los repositorios |
 | `CLAUDE.md` del repo | `Joseco.DDD.Core` 1.0.2 | `Nurtricenter.Core.csproj` referencia 1.0.3 |
+| Esta ficha (antes del 2026-10-28; revisión transversal: la ficha describía `dev`) | MS5 consume `package-validated` (`PackageValidatedConsumer`, `events_consumed` con `ms5.package-validated`) y ms5-gap-03 estaba "Resuelto" | En `main` no hay consumidor: `RabbitMqExtensions.cs` dice "PURE PRODUCER" y `Program.cs` del worker no registra ninguno. El consumidor existe solo en `dev`. Corregido: `events_consumed: []`, ms5-gap-03 "resuelto en `dev`, pendiente de merge" |
+| Esta ficha (antes del 2026-10-28; revisión transversal: la ficha describía `dev`) | Kernel `Nur.Tricenter.Integration` 1.2.0, consume `Messages.Contracting` | `main` referencia 1.1.0 en `contracts/Nurtricenter.Contracts.csproj`; 1.2.0 solo en `dev`. Corregido |
+| Esta ficha (antes del 2026-10-28; revisión transversal: la ficha describía `dev`) | Inbox atómico (`InboxMessages`, `IdempotentConsumer`, `AddValidatedPackageCommand`) y registro en `RabbitMqExtensions.AddNurtricenterConsumers` | Nada de eso existe en `main` (ni la tabla ni la migración `AddInboxMessages`). Corregido en messaging.md, domain.md y flows.md |
+| Esta ficha (antes del 2026-10-28; revisión transversal: la ficha describía `dev`) | `POST /packages/deliveries` es un "respaldo manual" del evento de MS3 | En `main` es la **única** entrada de paquetes. Corregido en api.md, integrations.md y service.yaml |
+| Esta ficha (antes del 2026-10-28; revisión transversal: la ficha describía `dev`) | Los 10 exchanges de MS5 no tienen colas de consumidor; "ningún servicio reacciona" | `ms4.delivery-added-to-route`, `ms4.delivery-completed` y `ms4.delivery-failed` existen en la topología (nur-tricenter-local#6) y MS4 las consume en su PR #3 (sin merge). Corregido en messaging.md, flows.md y ms5-gap-04 |
+| Esta ficha (antes del 2026-10-28; revisión transversal: la ficha describía `dev`) | Consul: solo el nombre `nurtricenter` | Además `ServiceId` `nurtricenter-1` por configuración; el default del código es `nurtricenter-service` para nombre e id (`ServiceRegistrationOptions`). Agregado en README |
