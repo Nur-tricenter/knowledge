@@ -15,6 +15,20 @@ status: draft
 updated: 2026-10-24
 
 exchanges:
+  # ── Clínica (MS1) ───────────────────────────────────────────────────────────
+  # OJO: este exchange NO está en la topología de la plataforma (rabbitmq-definitions.json).
+  # Lo declara el propio worker de MS1 (repo Juandcode/ClinicaNutricionalMicroservicio1), junto con
+  # el sink durable gestion-clinica-nutricional.default (sin consumidor; no va en queues).
+  # El contrato es local a MS1 (no está en Nur.Tricenter.Integration) y su sobre Joseco no lleva
+  # EventType: "Paciente.Published" es solo la convención del catálogo. Ver services/ms1-clinic/messaging.md.
+  - name: paciente-published
+    publisher: ms1
+    contract: PacientePublished
+    namespace: GestionClinicaNutricional.Application.Contracts
+    event_type: Paciente.Published
+    payload: [PacienteId, CI, Nombre, Apellido]
+    queues: []
+
   # ── Catálogo (MS2) ──────────────────────────────────────────────────────────
   - name: food-published
     publisher: ms2
