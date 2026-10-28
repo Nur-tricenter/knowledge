@@ -1,0 +1,180 @@
+# Ficha estructurada de MS1. Fuente: código de Juandcode/ClinicaNutricionalMicroservicio1, rama main (2026-10-24).
+# Repo FUERA de la org Nur-tricenter; no integrado a la plataforma hoy (sin Consul, gateway ni compose de plataforma).
+
+id: ms1
+name: Clínica nutricional (Clinic)
+owner:
+  name: Diego Cabrera
+  github: Juandcode
+repo: Juandcode/ClinicaNutricionalMicroservicio1
+status: draft
+summary: >-
+  Registra pacientes, sus consultas iniciales (antecedentes y hábitos) y los planes alimenticios de la
+  clínica con sus evaluaciones de control. Publica paciente-published por outbox. Hoy no está integrado
+  a la plataforma: sin auth, sin Consul ni gateway, y nadie lo llama.
+stack: [.NET 10, ASP.NET Core Controllers, MediatR, EF Core, SQL Server, RabbitMQ (Joseco), NSwag]
+
+runtime:
+  consul_name: null
+  gateway_prefix: null
+  database: ClinicaNutricional3
+  workers: [GestionClinicaNutricional.WorkerService]
+
+aggregates:
+  - name: Paciente
+    description: Paciente de la clínica (CI, nombre, apellido). Paciente.Crear levanta PacienteCreated. Sin unicidad de CI ni id de usuario de identity.
+  - name: ConsultaInicial
+    description: Consulta inicial de un paciente con peso, altura, composición, antecedentes (JSON) y hábitos alimenticios. Se aprueba con Estado=true.
+    states: [Pendiente (Estado=false), Aprobada (Estado=true)]
+  - name: PlanAlimenticio
+    description: Plan propio de la clínica (no el de MS2) con duración 15/30, vencimiento, próximo control y comidas. EstadoPlan lo envía el cliente.
+    states: [Vigente, Vencido]
+  - name: Evaluacion
+    description: Entidad dentro de PlanAlimenticio (no es raíz). Evaluación de control con descripción y fecha.
+
+endpoints:
+  - method: POST
+    path: /api/v1/Patient/CreatePaciente
+    scope: null
+    callers: [frontend]
+    summary: Registra un paciente y encola PacienteCreated en el outbox. Sin validación ni unicidad de CI. Hoy no lo llama ningún frontend real.
+    idempotent: false
+  - method: GET
+    path: /api/v1/Patient/{id}
+    scope: null
+    callers: [frontend]
+    summary: Paciente con sus consultas iniciales. Inexistente → 500. No coincide con el GET /api/v1/patients/{id} que simula MS3.
+    idempotent: true
+  - method: POST
+    path: /api/v1/Patient/{pacienteId}/Plan
+    scope: null
+    callers: [frontend]
+    summary: Crea un plan alimenticio para el paciente (duración, estado, vencimiento, comidas). No valida contra MS2.
+    idempotent: false
+  - method: PATCH
+    path: /api/v1/Patient/{planAlimenticioId}/SchedulePlan
+    scope: null
+    callers: [frontend]
+    summary: Fija la fecha del próximo control del plan.
+    idempotent: true
+  - method: POST
+    path: /api/v1/Patient/{planAlimenticioId}/CreateControlEvaluacion
+    scope: null
+    callers: [frontend]
+    summary: Agrega una evaluación de control al plan.
+    idempotent: false
+  - method: GET
+    path: /api/v1/Patient/{planAlimenticioId}/ControlEvaluationHistory
+    scope: null
+    callers: [frontend]
+    summary: Historial de evaluaciones del plan.
+    idempotent: true
+  - method: POST
+    path: /api/v1/Consultation/{pacienteId}/Consultation
+    scope: null
+    callers: [frontend]
+    summary: Crea una consulta inicial con antecedentes y hábitos (la categoría del hábito se descarta).
+    idempotent: false
+  - method: GET
+    path: /api/v1/Consultation/{pacienteId}/Consultations
+    scope: null
+    callers: [frontend]
+    summary: Consultas del paciente, de la más reciente a la más antigua.
+    idempotent: true
+  - method: POST
+    path: /api/v1/Consultation/{consultaId}/Approve
+    scope: null
+    callers: [frontend]
+    summary: Aprueba la consulta (Estado=true). Repetir no cambia nada.
+    idempotent: true
+  - method: POST
+    path: /Paciente/CreatePaciente
+    scope: null
+    callers: [frontend]
+    summary: Duplicado sin /api de CreatePaciente.
+    idempotent: false
+  - method: GET
+    path: /Paciente/{id}
+    scope: null
+    callers: [frontend]
+    summary: Duplicado sin /api de GET paciente.
+    idempotent: true
+  - method: POST
+    path: /Paciente/{pacienteId}/CreateConsulta
+    scope: null
+    callers: [frontend]
+    summary: Duplicado sin /api de crear consulta inicial.
+    idempotent: false
+  - method: POST
+    path: /Paciente/{planAlimenticioId}/CreateEvaluacion
+    scope: null
+    callers: [frontend]
+    summary: Duplicado sin /api de crear evaluación.
+    idempotent: false
+  - method: GET
+    path: /Paciente/{planAlimenticioId}/Evaluaciones
+    scope: null
+    callers: [frontend]
+    summary: Duplicado sin /api del historial de evaluaciones.
+    idempotent: true
+  - method: POST
+    path: /Atencion/{pacienteId}/Consultas
+    scope: null
+    callers: [frontend]
+    summary: Duplicado sin /api que lista consultas usando POST.
+    idempotent: true
+
+sync_calls: []
+
+events_published:
+  - exchange: paciente-published
+    contract: PacientePublished
+    event_type: Paciente.Published
+    trigger: Registro de un paciente (CreatePaciente). Contrato local, fuera del kernel y de la topología; hoy sale con PacienteId vacío y campos cruzados.
+    outbox: true
+
+events_consumed: []
+
+gaps:
+  - id: ms1-gap-01
+    summary: Repo fuera de la org; sin Consul, gateway ni ms1.compose.yml; los scripts de nur-tricenter-local esperan src/ClinicaNutricional.* (X-04, X-12).
+    severity: high
+  - id: ms1-gap-02
+    summary: Sin autenticación ni scopes; Swagger siempre activo.
+    severity: high
+  - id: ms1-gap-03
+    summary: No existe POST /api/v1/patients/contact-information que espera MS5 y Paciente no tiene teléfono.
+    severity: high
+    blocked_by: ms5
+  - id: ms1-gap-04
+    summary: PacientePublished sale con PacienteId vacío, CI/Nombre/Apellido cruzados y probablemente publicado dos veces.
+    severity: high
+  - id: ms1-gap-05
+    summary: Contrato local sin EventType; exchange paciente-published fuera de la topología y sin consumidores.
+    severity: medium
+  - id: ms1-gap-06
+    summary: Connection string SQL Server cableada (localhost\SQLEXPRESS, ClinicaNutricional3); no corre en contenedor.
+    severity: high
+  - id: ms1-gap-07
+    summary: Paciente sin id de usuario de identity; X-08 sigue abierto.
+    severity: medium
+    blocked_by: identity
+  - id: ms1-gap-08
+    summary: Sin manejador de errores; recursos inexistentes devuelven 500.
+    severity: medium
+  - id: ms1-gap-09
+    summary: Modelo anémico sin invariantes (CI único, plan con consulta aprobada, estado del plan).
+    severity: medium
+  - id: ms1-gap-10
+    summary: Las 7 colas ms1.* de la topología no se consumen.
+    severity: low
+  - id: ms1-gap-11
+    summary: Rutas duplicadas sin /api (/Paciente, /Atencion).
+    severity: low
+  - id: ms1-gap-12
+    summary: dockerfile copia una carpeta inexistente y docker-compose usa una imagen externa con ASPNETCORE_URLS mal escrito.
+    severity: low
+  - id: ms1-gap-13
+    summary: PlanAlimenticio no guarda ni valida el plan de MS2, aunque el README dice que sí.
+    severity: medium
+    blocked_by: ms2

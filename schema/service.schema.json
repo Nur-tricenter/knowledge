@@ -31,7 +31,7 @@
         "github": { "type": "string", "pattern": "^[A-Za-z0-9-]+$" }
       }
     },
-    "repo": { "type": "string", "pattern": "^Nur-tricenter/[A-Za-z0-9._-]+$" },
+    "repo": { "description": "owner/repo en GitHub. Normalmente Nur-tricenter/...; se admite otra cuenta para repos aún fuera de la org (MS1).", "type": "string", "pattern": "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$" },
     "status": {
       "description": "draft = en construcción; complete = cumple el checklist de CONTRIBUTING.md.",
       "enum": ["draft", "complete"]
