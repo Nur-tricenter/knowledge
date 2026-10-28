@@ -1,0 +1,85 @@
+# Ficha estructurada del API Gateway. Fuente: código de Nur-tricenter/nur-tricenter-api-gateway (main, 555796f)
+# y nur-tricenter-local/compose/docker-compose.yml (2026-10-28).
+# owner: el repo no declara owner. Los 13 commits son del mismo autor, pero no hay asignación formal;
+# github apunta a la organización hasta que se asigne uno.
+
+id: gateway
+name: API Gateway
+owner:
+  name: Sin owner asignado
+  github: Nur-tricenter
+repo: Nur-tricenter/nur-tricenter-api-gateway
+status: complete
+summary: >-
+  Punto de entrada único de la plataforma. Reenvía /api/{nombre-en-consul}/** a una instancia sana
+  del servicio (como /api/**), con la tabla de rutas reconstruida desde Consul cada 30 s. No valida
+  JWT ni tiene dominio propio.
+stack: [.NET 10, YARP 2.3.0, Consul client 1.7.14.7, AspNetCore.HealthChecks.UI 9.0.0]
+
+runtime:
+  consul_name: null
+  gateway_prefix: null
+  database: null
+  workers: []
+
+aggregates: []
+
+endpoints:
+  - method: GET
+    path: /health
+    scope: null
+    callers: [ops, gateway]
+    summary: Estado del propio gateway (formato HealthChecks UI). Sin checks registrados; responde Healthy si el proceso está arriba. Lo sondea /health-ui cada 10 s.
+    idempotent: true
+  - method: GET
+    path: /health-ui
+    scope: null
+    callers: [ops]
+    summary: Tablero HealthChecks UI (en memoria). Solo monitorea el /health del gateway, no los microservicios.
+    idempotent: true
+
+sync_calls:
+  - target: external:consul
+    method: GET
+    path: /v1/catalog/services
+    via: direct
+    auth: none
+    purpose: Listar los nombres de servicio registrados (cada 30 s, primera vez al arrancar).
+    on_failure: Se loguea el error y se conserva la tabla de rutas anterior. Si falla al arrancar, la tabla queda vacía (todo 404) hasta el primer refresco que funcione.
+  - target: external:consul
+    method: GET
+    path: /v1/health/service/{name}
+    via: direct
+    auth: none
+    purpose: Por cada servicio distinto de consul, obtener solo las instancias passing (dirección y puerto) para armar su cluster.
+    on_failure: Igual que el catálogo (se conserva la tabla anterior). Con 0 instancias passing, el servicio queda sin ruta y responde 404.
+
+events_published: []
+
+events_consumed: []
+
+gaps:
+  - id: gateway-gap-01
+    summary: No valida JWT en el borde; MS3 y MS5, que tampoco lo validan, quedan abiertos a través del gateway.
+    severity: high
+  - id: gateway-gap-02
+    summary: Sin CORS, rate limiting, timeouts ni reintentos propios (rigen los defaults de YARP).
+    severity: medium
+  - id: gateway-gap-03
+    summary: Polling de 30 s sin health checks de YARP; 502 hacia instancias caídas y 404 para servicios recién levantados.
+    severity: medium
+  - id: gateway-gap-04
+    summary: /health no tiene checks y /health-ui solo se monitorea a sí mismo.
+    severity: low
+  - id: gateway-gap-05
+    summary: No se registra en Consul ni tiene OpenTelemetry; el X-Correlation-Id no se loguea.
+    severity: low
+  - id: gateway-gap-06
+    summary: DangerousAcceptAnyServerCertificate no tiene efecto porque el esquema upstream es siempre http.
+    severity: low
+  - id: gateway-gap-07
+    summary: README del repo, comentarios y launchSettings describen Swagger, Swashbuckle, ApiGateway.sln y la convención {name}-service, que no existen en el código.
+    severity: low
+  - id: gateway-gap-08
+    summary: El nombre en Consul es el prefijo público y no hay convención (identity-service, nurtricenter).
+    severity: low
