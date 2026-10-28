@@ -47,7 +47,7 @@
 - **Archivo:** `Nurtricenter.MS3.Core/Aggregates/Package.cs`
 
 ### OutgoingIntegrationEvent (outbox)
-- **Representa:** un mensaje a MS4 o MS5 guardado en la misma transacción que el cambio que lo originó.
+- **Representa:** un mensaje a MS4 o MS5, guardado justo después del cambio que lo originó. **No** en la misma transacción: el handler hace dos `CommitAsync` seguidos (`ms3-gap-11`).
 - **Estados:** `Simulated` (pendiente; el nombre viene de cuando solo se simulaba) → `Published` | `Rejected` | `Unroutable`.
 - **Archivo:** `Nurtricenter.MS3.Core/Simulations/OutgoingIntegrationEvent.cs`
 
@@ -122,7 +122,7 @@ stateDiagram-v2
 | Un control solo se cobra a quien no tiene contrato activo | `ProcessControlChargeCommandHandler` | 409 `ACTIVE_CONTRACT` |
 | El flujo del paquete es secuencial | `Package.RegisterAssembly` / `GenerateLabel` / `ApproveQualityControl` | `InvalidOperationException` → 500 |
 | La orden diaria no puede estar vacía | `DailyProductionOrder.ConsolidateOrder` + `GetDailyOrderQueryHandler` | 422 `NO_RECIPES` (el handler lo detecta antes del dominio) |
-| El cobro no depende de MS4 | Outbox: fila `CreateSchedule` en la misma transacción que el pago | MS4 caído: la fila queda pendiente y se reintenta |
+| El cobro no depende de MS4 | Outbox: fila `CreateSchedule` guardada en un segundo `CommitAsync` tras el pago (no atómico, `ms3-gap-11`) | MS4 caído: la fila queda pendiente y se reintenta |
 
 ## Datos que son copia de otro servicio
 | Dato | De | Cómo se mantiene |

@@ -5,7 +5,7 @@
 |---|---|---|---|---|
 | `package-validated` | `PackageValidated` | `Package.Validated` | El control de calidad aprueba un paquete (`POST /production/packages/validate`); un evento por paquete | sí |
 
-Contrato: `Nur.Tricenter.Integration.Messages.Contracting` (versión 1.2.0 del kernel). Mientras esa versión no esté publicada, MS3 usa una copia local idéntica en `Infrastructure/Messaging/Contracts/`.
+Contrato: `Nur.Tricenter.Integration.Messages.Contracting` (versión 1.2.0 del kernel, ya fusionada en su `main`). MS3 **no** referencia el kernel: publica una copia local equivalente, `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.Production.PackageValidated` (mismos campos y `EventType`, otro namespace y base `IntegrationMessage` de Joseco). En el cable el JSON es el mismo (`ms3-gap-05`).
 
 Cuerpo publicado:
 ```json
@@ -20,7 +20,7 @@ Cuerpo publicado:
 ```
 - `DeliveryAddress` y `TrackingNumber` salen de la etiqueta del paquete.
 - `Latitude` y `Longitude` salen del calendario de MS4 del mismo paciente cuya dirección coincide con la de la etiqueta; van en `null` si ninguno coincide.
-- `PackageId` es el id del paquete de MS3, **no** el `packId` (día de entrega) de MS4 (ver `ms3-gap-03`).
+- `PackageId` es el id del paquete de MS3, **no** el `packId` (día de entrega) de MS4 (ver `ms3-gap-03`). MS5 lo copia a sus eventos de entrega, y MS4 (PR #3 de MS4, abierto) espera ahí un `packId` entero: con un GUID no puede cerrar el día.
 
 **No publica `contract-activated` ni ningún evento de contrato.** La creación del calendario va por REST a MS4 (ver [integrations.md](./integrations.md)); la fila `CreateSchedule` del outbox es solo el mecanismo para no perder esa llamada.
 
@@ -31,13 +31,13 @@ Cuerpo publicado:
 | `ms3.recipe-published` | `recipe-published` | `RecipePublished` | `RecipePublishedConsumer` | Upsert de la receta en `CatalogRecipes` |
 | `ms3.recipe-updated` | `recipe-updated` | `RecipeUpdated` | `RecipeUpdatedConsumer` | Actualiza nombre e instrucciones en `CatalogRecipes` |
 
-Contratos: `Nur.Tricenter.Integration.Messages.Catalog` (copias locales idénticas mientras no haya `NUGET_TOKEN`). Código: `Infrastructure/Messaging/` (handlers en `Consumers/`, registro en `MessagingExtensions.cs` y `Nurtricenter.MS3.WorkerService/RabbitMqExtensions.cs`).
+Contratos: `Nur.Tricenter.Integration.Messages.Catalog`. MS3 usa copias locales equivalentes en `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.Catalog` (mismos campos y `EventType`, otro namespace), porque no referencia ningún paquete `Nur.Tricenter.*`. Código: `Infrastructure/Messaging/` (handlers en `Consumers/`, registro en `MessagingExtensions.cs` y `Nurtricenter.MS3.WorkerService/RabbitMqExtensions.cs`).
 
 ## Colas declaradas que no se consumen
 La topología crea para MS3 también `ms3.food-published`, `ms3.food-nutritional-info-updated`, `ms3.user-published` y `ms3.user-updated`. **No se consumen:** MS3 no necesita alimentos, y los usuarios no hacen falta mientras sus endpoints sean anónimos. Acumulan mensajes (X-06).
 
 ## Garantías de entrega
-- **Publicación:** outbox transaccional. `ApproveQualityCommandHandler` guarda la fila `TransferToLogistics` junto al cambio del paquete; `OutboxRelay`, que corre en `Nurtricenter.MS3.WorkerService` cada 5 s, la publica y la marca `Published`. Si RabbitMQ falla, la fila queda pendiente y se reintenta.
+- **Publicación:** outbox, **no atómico**. `ApproveQualityCommandHandler` guarda primero el paquete `Validated` (`CommitAsync`) y después, en un segundo `CommitAsync` sin transacción explícita, la fila `TransferToLogistics`. Si el proceso cae entre ambos, el paquete queda validado y el evento no sale nunca (`ms3-gap-11`; lo mismo pasa con la fila `CreateSchedule` del pago). `OutboxRelay`, que corre en `Nurtricenter.MS3.WorkerService` cada 5 s, la publica y la marca `Published`. Si RabbitMQ falla, la fila queda pendiente y se reintenta.
 - **Id del mensaje:** es el `Id` de la fila del outbox. Si el worker cae entre publicar y marcar, la republicación lleva el mismo `Id` y el consumidor debe descartarla.
 - **Consumo:** inbox atómico. `IdempotentConsumer` guarda el `MessageId` en `InboxMessages` en la misma transacción que el upsert; un mensaje repetido se ignora.
 - **Reintentos:** los de la librería Joseco (`MaxRetryAttempts`, 3, con espera creciente) y luego la cola de error de esa cola.
@@ -52,5 +52,5 @@ flowchart LR
   Q1 --> H[IdempotentConsumer] --> DB[(CatalogPlans / CatalogRecipes)]
   O[(Outbox)] --> R[OutboxRelay] -- publica --> X2{{package-validated}}
   X2 --> Q2[(ms5.package-validated)]
-  Q2 -. sin consumidor todavía .-> MS5[MS5]
+  Q2 -. "PackageValidatedConsumer, rama dev de MS5" .-> MS5[MS5]
 ```

@@ -8,7 +8,7 @@ MS3 es donde un paciente **compra** un plan nutricional y donde la cocina **prod
 ## Responsabilidades
 - Crear el **contrato** de un paciente con un plan, cobrarlo (factura) y cancelarlo.
 - Cobrar los **controles de seguimiento** de pacientes sin contrato activo.
-- Pedir a MS4 el **calendario de entregas** en cuanto el contrato queda pagado, sin que el cobro dependa de que MS4 esté arriba (outbox).
+- Pedir a MS4 el **calendario de entregas** en cuanto el contrato queda pagado, sin que el cobro dependa de que MS4 esté arriba (outbox, no atómico: `ms3-gap-11`).
 - Armar la **orden de producción diaria**: recetas y raciones totales de un día, a partir del menú que entrega MS4.
 - Llevar cada **paquete** por su flujo: crear, armar, etiquetar, validar (control de calidad).
 - Avisar a logística que un paquete está listo (**evento `package-validated`**).
@@ -46,7 +46,8 @@ flowchart LR
 Todas las llamadas REST pasan por el gateway (`/api/contracting/**` para entrar a MS3).
 
 ## Stack y despliegue
-- **.NET 8**, FastEndpoints, MediatR, EF Core + PostgreSQL. Capas Core / Application / Infrastructure / Api, con DDD y CQRS.
+- **.NET 8** (`net8.0`), FastEndpoints 5.35.0, MediatR 12.4.1, EF Core 8.0.11 + PostgreSQL (Npgsql 8.0.11), Joseco.DDD.Core 1.0.2, RabbitMQ con Joseco.Communication.External.RabbitMQ 1.1.0, Consul 1.7.14.7. Capas Core / Application / Infrastructure / Api, con DDD y CQRS.
+- **No referencia ningún paquete `Nur.Tricenter.*`** (ni `Access`, ni `Security`, ni `Integration`): los contratos de mensajes son copias locales (`ms3-gap-05`) y no hay validación de JWT (`ms3-gap-01`).
 - **Dos modos con el mismo código** (cambia solo la configuración):
 
 | | Standalone | Plataforma (`nur-tricenter-local`) |

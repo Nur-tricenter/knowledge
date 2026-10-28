@@ -8,10 +8,11 @@
 | ms3-gap-04 | Errores de dominio devuelven 500 y la validación del lote es parcial | medium | — | abierto |
 | ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales | medium | kernels, `NUGET_TOKEN` | abierto |
 | ms3-gap-06 | Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario | medium | MS4 | abierto |
-| ms3-gap-07 | La orden de producción real depende del campo `menu` que MS4 aún no devuelve | medium | MS4 | abierto (PR propuesto) |
+| ms3-gap-07 | La orden de producción real depende del campo `menu` que MS4 aún no devuelve | medium | MS4 | abierto (rama de MS4 sin PR) |
 | ms3-gap-08 | `MealPlanPublished` no trae precio: el plan proyectado cuesta 0 | low | MS2 | abierto |
 | ms3-gap-09 | Nadie avisa a MS4 que un día está `InProduction` | low | MS4 | abierto (ms4-gap-04) |
 | ms3-gap-10 | Mensajes no persistentes y colas sin consumidor | low | Joseco, todos | abierto (X-06) |
+| ms3-gap-11 | El outbox no es atómico: el cambio y su fila se guardan en dos `CommitAsync` | medium | — | abierto |
 
 ## Detalle
 
@@ -27,7 +28,7 @@
 
 ### ms3-gap-03 — El evento no calza con MS5 ni con MS4
 - **Qué pasa:** el owner de MS5 decidió que el `packageId` del evento sea el `packId` de MS4, lo que además cerraría X-01 (MS5 podría informar el resultado de cada día). `PackageValidated.PackageId` es el id del paquete de MS3, un GUID propio. MS5 usa `string` para `patientId` y MS3/MS4 usan `Guid`. `AddressCoordinates` no admite nulos en MS5, y el evento los manda `null` si no hay calendario que coincida.
-- **Impacto:** aunque MS5 consuma la cola, no puede correlacionar la entrega con el día de MS4, y puede rechazar paquetes sin coordenadas.
+- **Impacto:** MS5 ya consume la cola (rama `dev`), pero no puede correlacionar la entrega con el día de MS4. MS4 consume los eventos de entrega de MS5 (PR #3 de MS4, abierto) y espera que su `PackageId` sea el `packId` entero; con el GUID de MS3 no puede cerrar el día (`Delivered`/`Failed`).
 - **Qué haría falta:** acordar con MS5 el campo (agregar el `packId` de MS4 al evento) y el tipo del id de paciente. MS3 recibe el `packId` de cada entrega en `active-tomorrow` (hoy lo traduce a `SimActiveCalendar.PackageId`), pero no lo guarda en el `Package`; habría que asociarlo al crear el paquete.
 
 ### ms3-gap-04 — 500 en errores de negocio y lote parcial
@@ -36,9 +37,9 @@
 - **Qué haría falta:** mapear esas excepciones a 409/422 y que `validate` reporte el fallo de cada paquete en `results[]`, como ya hace con los errores de `Result`.
 
 ### ms3-gap-05 — Contratos como copias locales
-- **Qué pasa:** el feed de GitHub Packages exige `NUGET_TOKEN`, que aún no se tiene. `PackageValidated` está en la rama `feat/contracting-messages` del kernel (1.2.0), sin publicar. Mientras, MS3 usa `Infrastructure/Messaging/Contracts/` y copias de `MealPlanPublished`, `RecipePublished` y `RecipeUpdated`.
+- **Qué pasa:** el feed de GitHub Packages exige `NUGET_TOKEN`, que MS3 aún no usa. `PackageValidated` ya está en `main` del kernel (PR #3, versión 1.2.0), y MS5 lo referencia en su rama `dev`. MS3 no referencia ningún paquete `Nur.Tricenter.*`: usa copias locales equivalentes (mismos campos y `EventType`, namespace `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.*`) de `PackageValidated`, `MealPlanPublished`, `RecipePublished` y `RecipeUpdated`.
 - **Impacto:** si el publicador cambia un campo, las copias no se enteran (el JSON desconocido se ignora sin error). La regla del equipo es no tener copias locales.
-- **Qué haría falta:** publicar 1.2.0 y que MS3 referencie `Nur.Tricenter.Integration`. El formato en el cable es el mismo, así que el cambio es solo de referencias.
+- **Qué haría falta:** que MS3 referencie `Nur.Tricenter.Integration` 1.2.0. El formato en el cable es el mismo, así que el cambio es solo de referencias.
 
 ### ms3-gap-06 — Contrato pagado sin calendario
 - **Qué pasa:** el pago y la creación del calendario no son atómicos. Si MS4 responde 400/422 (p. ej. el plan dura 7 días y MS4 solo acepta 15 o 30), la fila queda `Rejected` y no se reintenta, pero el contrato ya está `Active` y cobrado.
@@ -46,9 +47,9 @@
 - **Qué haría falta:** validar la duración antes de cobrar (o contra la proyección de MS2), o una acción compensatoria (cancelar/reembolsar) y una alerta sobre filas `Rejected`.
 
 ### ms3-gap-07 — `menu` en `active-tomorrow`
-- **Qué pasa:** MS3 arma la orden con el `menu` de cada entrega. Hoy MS4 no lo devuelve; el cambio está propuesto en la rama `feat/active-tomorrow-menu` de MS4.
+- **Qué pasa:** MS3 arma la orden con el `menu` de cada entrega. `main` de MS4 no lo devuelve (`ActiveTomorrowLineDto` no tiene `Menu`); el cambio está en la rama `feat/active-tomorrow-menu` de MS4, sin PR abierto (revisado 2026-10-28).
 - **Impacto:** sin ese cambio, la orden diaria solo funciona con los 3 planes simulados; con un plan real responde 422 `NO_RECIPES` (antes era un 500).
-- **Qué haría falta:** revisar y mergear el PR de MS4 (aditivo: no rompe a los demás consumidores).
+- **Qué haría falta:** abrir el PR de esa rama en MS4, revisarlo y mergearlo (aditivo: no rompe a los demás consumidores).
 
 ### ms3-gap-08 — Precio del plan
 `MealPlanPublished` no trae el precio. El plan proyectado se expone con costo 0; nada lo usa hoy porque el monto llega en el pago. Si MS3 tuviera que validarlo, MS2 debe agregarlo al contrato.
@@ -58,6 +59,11 @@ MS4 tiene el estado `InProduction` y lo acepta como origen de `delivery-result`,
 
 ### ms3-gap-10 — Entrega de mensajes
 La librería Joseco publica mensajes no persistentes en exchanges no durables: un reinicio de RabbitMQ pierde los mensajes en cola. Ya se mitigó reimportando la topología en cada arranque, pero no los mensajes. Además, las colas `ms3.food-*` y `ms3.user-*` no se consumen y acumulan.
+
+### ms3-gap-11 — Outbox no atómico
+- **Qué pasa:** `ProcessPaymentCommandHandler` y `ApproveQualityCommandHandler` llaman dos veces a `IUnitOfWork.CommitAsync` (que es un `SaveChangesAsync`): primero el agregado (contrato pagado, paquete `Validated`) y después la fila del outbox (`CreateSchedule`, `TransferToLogistics`). No hay transacción explícita que envuelva ambos.
+- **Impacto:** si el API cae o la BD falla entre los dos commits, el cambio queda guardado sin su fila: un contrato cobrado al que nunca se le pide calendario, o un paquete validado que MS5 nunca recibe. Nada lo detecta ni lo reintenta.
+- **Qué haría falta:** agregar la fila antes del primer `CommitAsync` y guardar todo en un solo `SaveChangesAsync` (o envolver ambos en `BeginTransactionAsync`).
 
 ## Inconsistencias doc ↔ código
 En esta ficha se documentó **el código**.
@@ -69,3 +75,8 @@ En esta ficha se documentó **el código**.
 | Estado `Simulated` de `OutgoingIntegrationEvent` | Parece «evento simulado» | Significa **pendiente de entregar**; se conserva el nombre por compatibilidad con las pruebas |
 | `ContractActivatedDomainEvent` / `ContractCanceledDomainEvent` | Nombres de eventos de integración | Son eventos de dominio internos; **ningún contrato `contract-*` sale de MS3** |
 | X-10 (cross-service-gaps, antes de esta ficha) | El evento de MS3 «no existe» y MS3 «sin repo» | `PackageValidated` existe en el kernel (rama `feat/contracting-messages`) y se publica desde MS3; falta su consumidor en MS5 |
+| Esta ficha: `integrations.md`, `messaging.md`, `domain.md` y F2 (corregido 2026-10-28, revisión transversal) | El cambio y su fila del outbox se guardan «en la misma transacción» | Dos `CommitAsync` sin transacción explícita en `ProcessPaymentCommandHandler` y `ApproveQualityCommandHandler` (`ms3-gap-11`) |
+| Esta ficha: `messaging.md` (corregido 2026-10-28, revisión transversal) | MS3 usa una copia local «idéntica» del contrato del kernel | Copia **equivalente**: mismos campos y `EventType`, pero namespace `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.*` (no `Nur.Tricenter.Integration.Messages.*`) y base `IntegrationMessage` de Joseco |
+| Esta ficha: `ms3-gap-05` (corregido 2026-10-28, revisión transversal) | `PackageValidated` en una rama del kernel, 1.2.0 sin publicar | Ya fusionado en `main` del kernel (versión 1.2.0) y referenciado por la rama `dev` de MS5; MS3 sigue sin referenciar ningún paquete `Nur.Tricenter.*` |
+| Esta ficha: F4 y `messaging.md` (corregido 2026-10-28, revisión transversal) | `ms5.package-validated` no tiene consumidor | MS5 lo consume con `PackageValidatedConsumer` en su rama `dev` (aún no en `main`) |
+| Esta ficha: `ms3-gap-07` (corregido 2026-10-28, revisión transversal) | El `menu` de `active-tomorrow` está en un «PR propuesto» a MS4 | Solo existe la rama `feat/active-tomorrow-menu` de MS4, sin PR; `ActiveTomorrowLineDto` en `main` de MS4 no tiene `Menu` |
