@@ -1,0 +1,101 @@
+# Ficha estructurada de identity. Fuente: código de Nur-tricenter/nur-tricenter-identity, rama main (2026-10-23).
+# Sin owner asignado: el schema exige un usuario de GitHub, así que se usa la cuenta de la organización.
+
+id: identity
+name: Identity (emisor de tokens)
+owner:
+  name: Sin owner asignado
+  github: Nur-tricenter
+repo: Nur-tricenter/nur-tricenter-identity
+status: complete
+summary: >-
+  Único emisor de JWT de la plataforma. Guarda cuentas y scopes, cambia usuario y contraseña por un
+  token HS256 con los scopes en un claim, expande platform:* para el admin, crea las service accounts
+  y publica UserPublished por outbox.
+stack: [.NET 8, ASP.NET Core Controllers, EF Core, PostgreSQL, MediatR, Joseco Outbox, RabbitMQ (Joseco), BCrypt, Consul]
+
+runtime:
+  consul_name: identity-service
+  gateway_prefix: /api/identity-service
+  database: nur_tricenter_identity
+  workers: [identity-workerservice, identity-migrate]
+
+aggregates:
+  - name: User
+    description: Cuenta que puede autenticarse (persona o service account). UserName y Email únicos; siempre con hash BCrypt. Sus scopes viven en la tabla UserScopes.
+    states: [Active, Inactive]
+
+endpoints:
+  - method: POST
+    path: /api/v1/auth/login
+    scope: null
+    callers: [ms3, ms4, ops]
+    summary: Cambia usuario (o email) y contraseña por un JWT HS256 de 3600 s con los scopes expandidos. 401 idéntico ante cualquier falla.
+    idempotent: true
+  - method: GET
+    path: /api/v1/auth/me
+    scope: null
+    callers: [ops]
+    summary: Devuelve el principal leído del token (id, userName, isAdministrator, scopes). Requiere cualquier JWT válido; email siempre vacío.
+    idempotent: true
+  - method: POST
+    path: /api/v1/users
+    scope: identity.user:manage
+    callers: [ops]
+    summary: Crea una cuenta con scopes (así se crean ms3-service y ms4-service) y publica UserPublished. 409 si el nombre o email existen; rechaza identity:* pero acepta platform:*.
+    idempotent: false
+  - method: GET
+    path: /health
+    scope: null
+    callers: [external:consul]
+    summary: Health check anónimo; chequea Postgres solo si el registro en Consul está activo.
+    idempotent: true
+
+sync_calls: []
+
+events_published:
+  - exchange: user-published
+    contract: UserPublished
+    event_type: User.Published
+    trigger: Alta de una cuenta (POST /api/v1/users o seed del admin en el WorkerService).
+    outbox: true
+  - exchange: user-updated
+    contract: UserChanged
+    event_type: User.Changed
+    trigger: Cambio de scopes o activación de una cuenta (User.GrantScope/RevokeScope/Deactivate/Activate). Ningún endpoint los llama, así que hoy nunca se publica.
+    outbox: true
+
+events_consumed: []
+
+gaps:
+  - id: identity-gap-01
+    summary: POST /users acepta platform:*, así que cualquier titular de identity.user:manage crea una cuenta con todos los scopes de la plataforma.
+    severity: high
+  - id: identity-gap-02
+    summary: Sin endpoints para listar, cambiar scopes, desactivar, cambiar contraseña o revocar; user-updated nunca se publica.
+    severity: medium
+  - id: identity-gap-03
+    summary: El docker-compose de nur-tricenter-local perdió el include de identity; el stack local queda sin emisor de tokens (X-12).
+    severity: high
+  - id: identity-gap-04
+    summary: El token no relaciona la cuenta con el PatientId de MS1; impide la autorización por objeto (X-08).
+    severity: high
+    blocked_by: ms1
+  - id: identity-gap-05
+    summary: /me y el 201 de POST /users devuelven email vacío; Location apunta a /api/auth/me, que no existe.
+    severity: low
+  - id: identity-gap-06
+    summary: IdentityRoutes del kernel declara /api/identity, identity.user:create y un GET /users inexistente.
+    severity: low
+  - id: identity-gap-07
+    summary: El worker declara la cola durable identity.default, fuera de la topología, que nunca se consume y crece sin límite.
+    severity: low
+  - id: identity-gap-08
+    summary: Scopes no validados contra el kernel, sin validación de email ni contraseña, login sin rate limiting.
+    severity: medium
+  - id: identity-gap-09
+    summary: Firma HS256 con clave compartida; cualquier servicio que valida puede emitir tokens.
+    severity: medium
+  - id: identity-gap-10
+    summary: Sin proyecto de tests ni manejador global de excepciones; formatos de error no uniformes.
+    severity: low
