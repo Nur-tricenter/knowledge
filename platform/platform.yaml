@@ -8,7 +8,8 @@ components:
     kind: gateway
     tech: [.NET 10, YARP]
     host_port: 15005
-    summary: Punto de entrada único. Rutea /api/{consul-name}/** al servicio sano registrado en Consul. No valida JWT.
+    card: services/gateway-api
+    summary: Punto de entrada único. Rutea /api/{consul-name}/** al servicio sano registrado en Consul (relee cada 30 s). No valida JWT. Expone /health y /health-ui. No se registra en Consul.
 
   - id: consul
     name: Consul
@@ -22,19 +23,21 @@ components:
     kind: identity-provider
     tech: [.NET 8, EF Core, BCrypt]
     consul_name: identity-service
-    summary: Único emisor de JWT (issuer nur-tricenter-identity). Publica user-published y user-updated.
+    card: services/identity-service
+    summary: Único emisor de JWT (issuer nur-tricenter-identity, HS256, claim scope separado por espacios). Publica user-published; user-updated existe pero hoy ningún endpoint lo dispara.
 
   - id: rabbitmq
     name: RabbitMQ
     kind: message-broker
     host_port: 5672
-    summary: Exchanges fanout no durables, una cola {consumidor}.{exchange}. Topología importada de nur-tricenter-local.
+    management_port: 15672
+    summary: Exchanges fanout no durables, una cola {consumidor}.{exchange}. Topología importada de nur-tricenter-local (18 exchanges, 34 colas).
 
   - id: postgres
     name: PostgreSQL
     kind: database
     host_port: 5433
-    summary: Instancia compartida en local, una base de datos por servicio.
+    summary: Instancia compartida en local, una base de datos por servicio (ms2-plans-and-recipes-catalog, nur_tricenter_identity, nur_tricenter_contracting, ms4_delivery_calendar). MS5 usa Neon y MS1 SQL Server propio.
 
   - id: jaeger
     name: Jaeger

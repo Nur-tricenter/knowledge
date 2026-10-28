@@ -20,13 +20,13 @@ Contexto de **negocio y técnico** de toda la plataforma Nur-Tricenter, escrito 
 ## Estado de las fichas
 | Servicio | Owner | Estado |
 |---|---|---|
-| MS1 — Pacientes | — | ⬜ sin empezar |
+| MS1 — Clínica / pacientes | Diego Cabrera Alvarez (@Juandcode) | 🟨 [draft](./services/ms1-clinic/README.md) (repo fuera de la org) |
 | MS2 — Catálogo de planes y recetas | Robert Perez Lino | ✅ [complete](./services/ms2-catalog/README.md) |
 | MS3 — Contratación y producción | Luis Jesus Ferrufino | ✅ [complete](./services/ms3-contracting/README.md) |
 | MS4 — Calendario de entregas | Franklin Andre Romero Padilla | ✅ [completa](./services/ms4-delivery-calendar/README.md) |
 | MS5 — Logística y entregas | Andres Sebastian Guerrero Camacho | ✅ [complete](./services/ms5-logistics/README.md) |
-| Identity | — | ⬜ sin empezar |
-| API Gateway | — | ⬜ sin empezar |
+| Identity | — | ✅ [complete](./services/identity-service/README.md) |
+| API Gateway | — | ✅ [complete](./services/gateway-api/README.md) |
 
 Detalle y nombres de carpeta: [services/README.md](./services/README.md).
 
