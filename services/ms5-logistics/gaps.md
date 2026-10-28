@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | ms5-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels (`Nur.Tricenter.Access`) | abierto (X-03) |
 | ms5-gap-02 | No informa el resultado de la entrega a MS4 | high | MS4, kernels | abierto (X-01) |
-| ms5-gap-03 | Nadie llama a `POST /packages/deliveries` y el evento de MS3 que lo reemplaza no existe | high | MS3, kernels | abierto (X-10) |
+| ms5-gap-03 | Los paquetes llegan por `package-validated`, pero su `PackageId` no es el `packId` de MS4 | medium | MS3, MS4 | parcial (X-10) |
 | ms5-gap-04 | Los 10 eventos publicados no tienen consumidores | medium | consumidores | abierto (X-02) |
 | ms5-gap-05 | ClinicService es un mock de Postman, se llama directo, sin token y sin resiliencia | medium | MS1 | abierto (X-04) |
 | ms5-gap-06 | Los paquetes van a la última ruta de hoy de cualquier repartidor, y se duplican al reenviar | medium | — | abierto |
@@ -29,11 +29,10 @@
 - **Impacto:** los `DeliveryDay` de MS4 se quedan en `ReadyForProduction` para siempre; la evidencia (foto, firma) queda solo en MS5.
 - **Qué haría falta:** decidir con un ADR entre REST con service account `ms5-service` o eventos con colas `ms4.delivery-*` (ver F5 en [flows.md](./flows.md)). En los dos casos, MS5 necesita conocer el `dayId` de MS4: hoy solo tiene un `PackageId` de texto libre y los eventos no lo transportan.
 
-### ms5-gap-03 — Los paquetes producidos no llegan a MS5
-- **Qué pasa:** `POST /api/v1/packages/deliveries` existe, pero ningún servicio lo llama. Su forma (`patientId`, `packageId`, dirección, lat/long) se parece mucho a las líneas de `GET /calendars/active-tomorrow` de MS4 (`packId`, `patientId`, `address`, `latitude`, `longitude`), pero ese contrato no está acordado en ningún lado.
-- **Impacto:** en la plataforma no hay forma automática de que un paquete producido llegue a una ruta.
-- **Decisión del equipo:** MS3 publica un evento con los paquetes producidos y MS5 lo consume.
-- **Qué haría falta:** el contrato en `Nur.Tricenter.Integration` (`Messages/` de MS3), su exchange y la cola `ms5.*` en `nur-tricenter-local`, el publisher en MS3 (sin repo, X-04) y un consumidor idempotente en el worker de MS5 que reuse `AddDeliveriesHandler`. En el contrato, que `packageId` sea el `packId` de MS4 (destraba ms5-gap-02) y alinear el tipo de `patientId` (MS5 usa `string`, MS4 usa `Guid`).
+### ms5-gap-03 — Los paquetes llegan, pero sin vínculo con MS4
+- **Resuelto:** MS5 consume `package-validated` de MS3 (`PackageValidatedConsumer`, inbox idempotente) y agrega cada paquete a la ruta de hoy. `POST /packages/deliveries` queda como respaldo manual.
+- **Lo que queda:** `PackageValidated.PackageId` es el id del paquete de MS3, no el `packId` de MS4 (`ms3-gap-03`), así que MS5 sigue sin poder informar el resultado a MS4 (ms5-gap-02). Además, si no hay ruta para hoy el mensaje termina en la cola de error tras los reintentos: hay que crear la ruta y reencolarlo a mano.
+- **Qué haría falta:** agregar el `packId` de MS4 al contrato (cambio compatible en el kernel) y guardarlo en la entrega.
 
 ### ms5-gap-04 — Eventos sin destino
 - **Qué pasa:** los 10 exchanges existen en la topología, pero ninguna cola de consumidor está enlazada a ellos. Solo los recibe el sink `nurtricenter.default`, que nadie lee.

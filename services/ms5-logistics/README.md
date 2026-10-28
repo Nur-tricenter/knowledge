@@ -19,13 +19,13 @@ Una vez que la comida está producida, alguien tiene que llevarla a la puerta de
 - No guarda datos del paciente: solo su `PatientId`. El nombre y el teléfono se piden a **MS1** (hoy, un mock de Postman) cada vez que hacen falta.
 - No actualiza el calendario de entregas: el día de MS4 **no** pasa a `Delivered`/`Failed` porque MS5 no llama a `PATCH /delivery-result` (gap X-01).
 - No autentica ni autoriza: **todos sus endpoints son anónimos** (gap X-03). No emite ni valida tokens.
-- **No consume eventos (todavía).** Está decidido que consuma eventos de MS3 (paquetes producidos), pero no hay contrato ni código. Las 7 colas `ms5.*` que hoy declara la topología no las lee nadie.
+- Consume **un solo** evento: `package-validated` de MS3 (paquetes aprobados por calidad), que agrega a la ruta de hoy. Las otras 7 colas `ms5.*` que declara la topología no las lee nadie.
 
 ## Actores y vecinos
 | Actor / servicio | Dirección | Mecanismo | Para qué |
 |---|---|---|---|
 | Operaciones / logística | entrante | REST vía gateway | Alta de repartidores y de rutas |
-| MS3 Producción _(previsto, sin implementar)_ | entrante | Evento RabbitMQ (contrato aún no está en el kernel). Hoy la única entrada es `POST /packages/deliveries`, que nadie llama | Entregar los paquetes producidos |
+| MS3 Producción | entrante | Evento RabbitMQ `package-validated` (cola `ms5.package-validated`) | Entregar los paquetes aprobados por calidad, que se agregan a la ruta de hoy |
 | App del repartidor (frontend) | entrante | REST vía gateway | Ver la ruta del día, iniciarla, marcar entregado / fallido |
 | ClinicService (MS1, hoy mock de Postman) | saliente | REST **directo**, sin token | Validar pacientes y obtener su nombre |
 | RabbitMQ | saliente | Outbox → 10 exchanges fanout | Avisar altas de repartidores, rutas y resultados de entrega |
@@ -36,20 +36,20 @@ Una vez que la comida está producida, alguien tiene que llevarla a la puerta de
 ```mermaid
 flowchart LR
   OPS[Operaciones] -- "POST /couriers<br/>POST /routes" --> MS5((MS5<br/>Logística))
-  MS3[MS3 Producción] -. "paquetes producidos<br/>(evento previsto, sin contrato)" .-> MS5
+  MS3[MS3 Producción] -. "package-validated<br/>ms5.package-validated" .-> MS5
   FE[App repartidor] -- "GET route/today<br/>POST start / deliver / fail" --> MS5
   MS5 -- "POST /api/v1/patients/contact-information<br/>directo, sin token" --> CS[MS1 ClinicService<br/>hoy mock de Postman]
   MS5 -. "outbox → 10 exchanges<br/>courier-*, route-*, delivery-*" .-> MQ{{RabbitMQ}}
   MQ -. "nurtricenter.default<br/>(sink, nadie consume)" .-> SINK[(historial)]
   MS5 -- "PATCH delivery-result<br/>(gap X-01, no existe)" --> MS4[MS4 Calendario]
 ```
-Todas las llamadas entrantes pasan por el gateway con el prefijo `/api/nurtricenter/**`. La arista "no existe" es una llamada REST que el diseño necesita y hoy nadie hace. La de MS3 es un **evento previsto**: mientras no exista, la única entrada de paquetes es `POST /packages/deliveries`, que nadie llama.
+Todas las llamadas entrantes pasan por el gateway con el prefijo `/api/nurtricenter/**`. La arista "no existe" es una llamada REST que el diseño necesita y hoy nadie hace. Los paquetes entran por el evento `package-validated` de MS3; `POST /packages/deliveries` queda como entrada manual de respaldo.
 
 ## Stack y despliegue
 - **.NET 10**, Clean Architecture + DDD táctico (`Joseco.DDD.Core`), controladores con `Ardalis.ApiEndpoints`, MediatR 14, FluentValidation, EF Core 10 + Npgsql, Serilog, Scalar (solo en Development).
 - **BD propia en Neon** (Postgres gestionado), **no** el Postgres compartido de la plataforma. Las migraciones se aplican a mano (`dotnet ef database update`); no hay job de migración.
 - **Consul:** se registra como `nurtricenter` (no un nombre de dominio) → prefijo en el gateway `/api/nurtricenter`. El registro es opcional: solo se activa si `ServiceRegistration:ServiceDiscoveryAddress` tiene valor.
-- **Kernels:** solo `Nur.Tricenter.Integration` 1.1.0 (contratos). No usa `Access`, `Security` ni `Observability`.
+- **Kernels:** solo `Nur.Tricenter.Integration` 1.2.0 (contratos; publica `Messages.Logistics` y consume `Messages.Contracting`). No usa `Access`, `Security` ni `Observability`.
 
 | | Standalone (`docker-compose.yml`) | Plataforma (`nurtricenter.compose.yml`) |
 |---|---|---|
@@ -65,7 +65,7 @@ Todas las llamadas entrantes pasan por el gateway con el prefijo `/api/nurtricen
 - [domain.md](./domain.md): modelo de dominio, estados e invariantes
 - [api.md](./api.md): endpoints expuestos
 - [integrations.md](./integrations.md): llamadas síncronas salientes
-- [messaging.md](./messaging.md): eventos publicados (y por qué no consume ninguno)
+- [messaging.md](./messaging.md): eventos publicados y el único consumido (`package-validated`)
 - [flows.md](./flows.md): casos de uso de punta a punta
 - [gaps.md](./gaps.md): deuda, inconsistencias y dependencias
 - [service.yaml](./service.yaml): datos estructurados (los usa la app visual)

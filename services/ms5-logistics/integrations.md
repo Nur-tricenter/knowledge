@@ -39,7 +39,7 @@ Es la **única** llamada HTTP saliente. MS5 **no llama a MS4** (no existe client
 
 ```mermaid
 sequenceDiagram
-  participant P as Cliente (hoy ninguno; MS3 por evento a futuro)
+  participant P as Operaciones (respaldo manual; MS3 usa el evento)
   participant GW as Gateway
   participant MS5
   participant CS as MS1 ClinicService (mock Postman)

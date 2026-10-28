@@ -1,7 +1,7 @@
 # Mensajería — MS5
 
 ## Eventos publicados
-MS5 publica **10 contratos de integración**, uno por cada hecho de su dominio, con **outbox transaccional**. Los contratos viven en el kernel `Nur.Tricenter.Integration` 1.1.0 (namespace `Nur.Tricenter.Integration.Messages.Logistics`) y los nombres de exchange en `contracts/NurtricenterExchanges.cs` del repo. Todos los exchanges son `fanout`, no durables, no auto-delete, y coinciden con `nur-tricenter-local/topology/rabbitmq-definitions.json`.
+MS5 publica **10 contratos de integración**, uno por cada hecho de su dominio, con **outbox transaccional**. Los contratos viven en el kernel `Nur.Tricenter.Integration` 1.2.0 (namespace `Nur.Tricenter.Integration.Messages.Logistics`) y los nombres de exchange en `contracts/NurtricenterExchanges.cs` del repo. Todos los exchanges son `fanout`, no durables, no auto-delete, y coinciden con `nur-tricenter-local/topology/rabbitmq-definitions.json`.
 
 | Exchange | Contrato (kernel) | EventType | Se dispara cuando | Outbox |
 |---|---|---|---|---|
@@ -54,9 +54,18 @@ Nurtricenter.WorkerService:
 - `OutboxChainCoverageTests` y `NurtricenterExchangesTests` fallan si un evento de dominio no tiene su `SaveInOutbox`/`PublishIntegrationEvent`, o si un exchange no tiene publisher (o al revés).
 
 ## Eventos consumidos
-**Ninguno.** MS5 no registra ningún `AddRabbitMqConsumer`: el worker es un **productor puro** (`RabbitMqExtensions.AddNurtricenterRabbitMq` lo deja explícito). No hay inbox ni proyecciones.
+| Cola | Exchange | Contrato | Handler | Efecto |
+|---|---|---|---|---|
+| `ms5.package-validated` | `package-validated` | `PackageValidated` (`Messages.Contracting`) | `PackageValidatedConsumer` | Agrega el paquete como `Delivery` `Pending` a la ruta de hoy más reciente (`AddValidatedPackageCommand`) |
 
-Plan acordado (**no implementado**): MS5 va a consumir eventos de **MS3**, empezando por el de paquetes producidos, que reemplaza a la llamada a `POST /packages/deliveries` (gap X-10). El contrato todavía no está en el kernel ni la cola en la topología, por eso no figura en `contracts/events.yaml`. Patrón previsto: el de MS4 (`TracingConsumer → IdempotentConsumer → handler`, solo en el worker), con la cola `ms5.{exchange}` declarada en `nur-tricenter-local`, no en MS5. El inbox idempotente es obligatorio: hoy reenviar un lote duplica entregas (ms5-gap-09).
+Código: `src/Nurtricenter.Infrastructure/Messaging/` (consumidor, inbox y decoradores), registro en `Nurtricenter.WorkerService/RabbitMqExtensions.AddNurtricenterConsumers`. Solo corre en el worker.
+
+- **Pipeline:** `TracingConsumer → IdempotentConsumer → PackageValidatedConsumer` (patrón de MS4).
+- **Inbox atómico:** `IdempotentConsumer` deja la fila `InboxMessages` (PK = `Id` del mensaje) en el mismo `AppDbContext` del scope, y el `UnitOfWork.CommitAsync` del comando la guarda junto con la entrega y la fila del outbox de `delivery-added-to-route`. Si el handler falla, no se guarda nada y la reentrega se procesa.
+- **Mapeo:** `PackageId`/`PatientId` (GUID) → texto; `TrackingNumber` → `LabelData` (o el `PackageId` si viene vacío); `DeliveryAddress` → descripción. Sin `Latitude`/`Longitude` → coordenadas de la sucursal (`branchCoordinates`), con un warning.
+- **Sin chequeo en MS1:** a diferencia de `POST /packages/deliveries`, no consulta ClinicService (MS3 ya validó el paquete).
+- **Errores:** sin ruta para hoy (o ruta cerrada) → excepción → reintentos (`MaxRetryAttempts` 3) y luego dead-letter. Se crea la ruta y se reencola a mano.
+- **Duplicados:** MS3 publica con `Id` = id de su fila de outbox, estable al republicar, así que el inbox los descarta.
 
 ## Colas declaradas que no se consumen
 La topología de `nur-tricenter-local` crea para MS5: `ms5.food-published`, `ms5.food-nutritional-info-updated`, `ms5.recipe-published`, `ms5.recipe-updated`, `ms5.meal-plan-published`, `ms5.user-published` y `ms5.user-updated`. **MS5 no consume ninguna:** su dominio no usa alimentos, recetas, planes ni usuarios. Se acumulan mensajes sin leer (gap transversal X-06).
@@ -69,7 +78,7 @@ Consecuencia: los eventos de MS5 **no se pierden** cuando el worker corre (queda
 ## Garantías de entrega
 - **Publicación:** outbox transaccional (`Joseco.Outbox.EFCore` 1.1.0, tabla `outbox.outboxMessage` en la BD Neon de MS5) + worker separado. Garantía **at-least-once**: si el publish falla, la fila queda sin procesar y se reintenta en la siguiente pasada. Un consumidor futuro tiene que ser idempotente por `Id`.
 - **Registro manual del outbox:** `AddOutbox<T>()` de Joseco está compilado contra MediatR 12 y falla con MediatR 14, así que los servicios se registran a mano (`AddOutboxServices` en Infrastructure) con un `EfCoreOutboxService` propio.
-- **Consumo:** no aplica (no consume).
+- **Consumo:** inbox atómico por `Id` de mensaje (tabla `InboxMessages`) para `ms5.package-validated`.
 - **Reintentos:** los del `OutboxProcessor` (cada pasada reintenta lo pendiente). `DefaultQueueRegistrar` reintenta la declaración cada 10 s si el broker no está. `RabbitMqSettings__MaxRetryAttempts` no se usa: es para consumidores.
 - **Trazabilidad:** `OutboxTracingService` (decorador de `IOutboxService`) copia `Activity.Current.TraceId` a la fila como `TraceId` y `CorrelationId`. El `OutboxProcessor` descarta el `CorrelationId` al re-envolver, así que `OutboxCorrelation.Resolve` lo recupera del `Activity` `Joseco.Outbox` (el worker registra un `ActivityListener` para esa fuente). El `CorrelationId` del contrato publicado es ese trace id. **No hay exportador OpenTelemetry** ni kernel `Nur.Tricenter.Observability`: la traza se ve en los logs de Serilog (el worker enriquece con el span), no en Jaeger.
 - **Topología:** MS5 declara sus 10 exchanges (con los mismos flags que la topología, si no RabbitMQ responde `406 PRECONDITION_FAILED`) y su sink. No declara colas de otros. El publisher usa `declareDestination: true`.
