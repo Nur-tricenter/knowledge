@@ -34,9 +34,9 @@ Es además el **primer consumidor** de la plataforma: proyecta los eventos `user
 | Frontend / admin | entrante | REST vía gateway | CRUD de foods, recipes y meal-plans |
 | MS4 Calendario | entrante (lo consulta MS4) | REST vía gateway + service account `ms4-service` | Composición del plan (`GET /meal-plans/{id}`) para resolver el menú del día N |
 | Identity | entrante | Evento RabbitMQ `user-published` | Proyectar `PlanAuthors` (read model) |
-| MS1 / MS3 / MS4 / MS5 | saliente | Evento RabbitMQ (fanout) | Consumen `food-published`, `recipe-published`, `meal-plan-published`, etc. |
+| MS1 / MS3 / MS4 / MS5 | saliente | Evento RabbitMQ (fanout) | Los 5 exchanges tienen cola para los cuatro, pero hoy solo consumen MS3 (`meal-plan-published`, `recipe-published`, `recipe-updated`) y MS4 (`meal-plan-published`, `recipe-updated`) |
 | Consul | saliente | Auto-registro + `/health` | Que el gateway lo encuentre |
-| Operaciones | entrante | REST | Disparar migraciones (`--migrate`) y seed |
+| Operaciones | — | CLI / configuración (no REST) | Migraciones (`dotnet Catalog.App.dll --migrate` o `Migrations__ApplyOnStartup=true`) y seed (`Seed__Enabled=true`) |
 
 ## Mapa de comunicación
 
@@ -47,8 +47,9 @@ flowchart LR
   GW -- "GET /api/v1/meal-plans/{id}" --> MS2
   ID[Identity] -. "user-published" .-> MQ{{RabbitMQ}}
   MQ -. "ms2.user-published" .-> W[MS2 WorkerService]
-  MS2 -- "outbox" --> MQ
-  MQ -. "food/recipe/meal-plan-*<br/>fanout" .-> MSX[MS1/MS3/MS4/MS5]
+  MS2 -. "outbox (vía worker)" .-> MQ
+  MQ -. "meal-plan-published, recipe-published,<br/>recipe-updated" .-> MS3[MS3 Contratación]
+  MQ -. "meal-plan-published, recipe-updated" .-> MS4
 ```
 
 Todas las llamadas REST entran por el gateway (`/api/catalog/**` para llegar a MS2).
@@ -57,9 +58,11 @@ Todas las llamadas REST entran por el gateway (`/api/catalog/**` para llegar a M
 
 - **.NET 8**, Clean Architecture + DDD, CQRS con MediatR, EF Core 9 + PostgreSQL (un solo DB, tres schemas: `write`, `read`, `outbox`).
 - **RabbitMQ** vía `Joseco.Communication.External.RabbitMQ` 1.1.0, con **outbox transaccional** (`Joseco.Outbox.EFCore`) e **inbox idempotente**.
-- **Consul** (nombre por defecto `catalog-service`, override de plataforma `catalog`), **API Gateway YARP**.
-- **Procesos:** `catalog-api` (puerto 8080, se registra en Consul) y `catalog-workerservice` (outbox drain + consumidor de `user-published` + registrar de `catalog.default`; **no** se registra en Consul). Las migraciones corren con `dotnet Catalog.App.dll --migrate` (one-shot) o con `Migrations__ApplyOnStartup=true` en dev.
-- **Modo standalone:** `docker-compose.yml` con Postgres propio; **plataforma:** `catalog.compose.yml` incluido por el orquestador.
+- **Kernels** `Nur.Tricenter.Access`, `.Security`, `.Integration` y `.Observability` en **1.1.0** (`Directory.Packages.props`).
+- **Consul** (en la plataforma se registra como `catalog`; el default del código es `catalog-service`), **API Gateway YARP**.
+- **Procesos:** `catalog-api` (puerto 8080, se registra en Consul) y `catalog-workerservice` (outbox drain + consumidor de `user-published` + registrar de `catalog.default`; **no** se registra en Consul).
+- **Migraciones:** el default (`appsettings.json`) es `Migrations:ApplyOnStartup=false` y migrar con `dotnet Catalog.App.dll --migrate` (one-shot, aplica `DomainDbContext` y `StoredDbContext`). En la **plataforma** no hay contenedor de migración: `catalog-api` migra al arrancar (`Migrations__ApplyOnStartup=true` en `catalog.compose.yml`) y además `nur-tricenter-local/scripts/start-stack.*` corre `Catalog.App.dll --migrate` desde el host contra `localhost:5433` (idempotente). En **standalone** lo hace el servicio one-shot `webapi-migrate`.
+- **Modo standalone:** `docker-compose.yml` con Postgres propio (BD `catalog`, puerto host 5433, API en 8082, seed apagado); **plataforma:** `catalog.compose.yml` incluido por `nur-tricenter-local` (BD `ms2-plans-and-recipes-catalog` en el Postgres compartido, `Seed__Enabled=true`).
 
 ## Índice de la ficha
 

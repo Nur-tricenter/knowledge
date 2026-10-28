@@ -36,7 +36,7 @@ El frontend consume todos los endpoints de foods, recipes y meal-plans vía gate
 
 ### Consul y observabilidad
 
-- MS2 se **auto-registra** en Consul al arrancar (`catalog-service` por defecto, override `catalog` en la plataforma) con un check HTTP anónimo a `/health`.
+- MS2 se **auto-registra** en Consul al arrancar (en la plataforma como **`catalog`**, por `ServiceRegistration__ServiceName` en `catalog.compose.yml`; el default del código es `catalog-service`, ver ms2-gap-09) con un check HTTP anónimo a `/health`.
 - No hay llamada de MS2 a Consul más allá del registro; el gateway descubre las instancias.
 
 ## Flujo de autenticación (entrante)
@@ -62,8 +62,8 @@ Como MS2 no llama a nadie, su única responsabilidad ante fallas es **responder 
 - Validación de negocio → `400` con `ApiResponse.Fail`.
 - Entidad no encontrada → `404`.
 - Token inválido o sin scope → `401`/`403` (lo resuelve el kernel de seguridad).
-- Excepción no controlada → `500` plano (no hay middleware global).
-- La BD o RabbitMQ caídos → el handler falla y el controller devuelve `500`; el outbox no se drena hasta que el worker recupere la conexión (reintenta cada 10 s para la topología).
+- Excepción dentro de un handler → **no** llega como `500`: cada handler la captura y devuelve `Result.Fail(ex.Message)`, que el controller traduce a `400` (comandos y listados) o `404` (lecturas por id y `PUT /foods`). Solo una excepción fuera del handler da `500` plano (no hay middleware global). Ver ms2-gap-11.
+- BD caída → por lo anterior, `GET /meal-plans/{id}` responde **`404`** y MS4 no puede distinguirlo de "plan inexistente" (el efecto en MS4 es el mismo: el día queda en `Scheduled`). RabbitMQ caído no afecta a la API (publica el worker); el outbox no se drena hasta que el worker recupere la conexión, y el registrar de `catalog.default` reintenta cada 10 s.
 
 ## Notas
 

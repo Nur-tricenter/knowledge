@@ -18,6 +18,8 @@ Payloads (según `contracts/events.yaml` y el código):
 - `RecipePublished` / `RecipeUpdated`: `RecipeId, Name, Instructions`. **No incluyen ingredientes** (decisión de modelado pendiente).
 - `MealPlanPublished`: `PlanId, Name, DurationType, TotalDays, MealsPerDay` (`DurationType` como string del enum, p. ej. `FIFTEEN_DAYS`). **No incluye composición.**
 
+Quién consume hoy (topología: `ms1/ms3/ms4/ms5.<exchange>` para los 5 exchanges): **MS3** (`ms3.meal-plan-published`, `ms3.recipe-published`, `ms3.recipe-updated`) y **MS4** (`ms4.meal-plan-published`, `ms4.recipe-updated`). Las demás colas existen pero ningún servicio las lee. El publisher llama `PublishAsync(..., declareDestination: true)`, así que también declara su exchange (fanout, no durable) al publicar.
+
 Cadena del outbox:
 ```
 Command → DomainDbContext.SaveChanges()
@@ -74,17 +76,17 @@ RabbitMQ delivery
 
 ```mermaid
 flowchart LR
-  MS2[MS2 Catálogo] -- outbox --> X1{{food-published}}
-  MS2 -- outbox --> X2{{food-nutritional-info-updated}}
-  MS2 -- outbox --> X3{{recipe-published}}
-  MS2 -- outbox --> X4{{recipe-updated}}
-  MS2 -- outbox --> X5{{meal-plan-published}}
+  MS2[MS2 Catálogo] -. outbox .-> X1{{food-published}}
+  MS2 -. outbox .-> X2{{food-nutritional-info-updated}}
+  MS2 -. outbox .-> X3{{recipe-published}}
+  MS2 -. outbox .-> X4{{recipe-updated}}
+  MS2 -. outbox .-> X5{{meal-plan-published}}
   X1 & X2 & X3 & X4 & X5 --> D[(catalog.default<br/>sink pasivo, durable)]
   X1 --> Q1[(ms1/ms3/ms4/ms5.food-published)]
   X3 --> Q3[(ms1/ms3/ms4/ms5.recipe-published)]
   X5 --> Q5[(ms1/ms3/ms4/ms5.meal-plan-published)]
 
-  ID[Identity] -- outbox --> XU{{user-published}}
+  ID[Identity] -. outbox .-> XU{{user-published}}
   XU --> Q2[(ms2.user-published)]
   subgraph W[MS2 WorkerService]
     T[TracingConsumer] --> I[IdempotentConsumer<br/>InboxMessages]
@@ -92,4 +94,4 @@ flowchart LR
   end
   Q2 --> T
   H --> PA[(PlanAuthors)]
-```<|end|><|start|>write to=assistant<|channel|>analysis<|message|>Wrote file successfully: knowledge/services/ms2-catalog/messaging.md
+```

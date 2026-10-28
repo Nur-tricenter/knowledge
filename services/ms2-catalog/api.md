@@ -3,9 +3,9 @@
 - **Prefijo interno:** `/api/v1`
 - **Prefijo en el gateway:** `/api/catalog/v1` (el gateway quita `/api/catalog` y agrega `/api`).
 - **Autenticación:** JWT de nur-tricenter-identity con el scope del endpoint. Sin token → 401; con otro scope → 403. Los endpoints de meal-plans exigen además autenticación a nivel de clase (`[Authorize]` sin policy), porque el autor se lee del claim `sub`.
-- **Formato de respuesta:** envoltorio `ApiResponse<T>` (`{ success, message, data, errors }`). Los errores de negocio llegan como `200`? No: los handlers devuelven `Result.Fail` y el controller responde `400` (commands) o `404` (lecturas). La validación de modelo de `[ApiController]` responde `400 ProblemDetails` antes de llegar al handler. No hay middleware global de excepciones: una excepción no controlada se convierte en `500` plano.
+- **Formato de respuesta:** envoltorio `ApiResponse<T>` (`{ success, message, data, errors }`). Los errores de negocio no llegan como `200`: los handlers devuelven `Result.Fail` y el controller responde `400` (commands y listados) o `404` (lecturas por id, y también `PUT /foods`). La validación de modelo de `[ApiController]` responde `400 ProblemDetails` antes de llegar al handler. No hay middleware global de excepciones, pero **todos los handlers envuelven su cuerpo en `try/catch`** y convierten cualquier excepción (incluida una caída de la BD) en `Result.Fail(ex.Message)`, así que llega como `400`/`404` con el mensaje de la excepción; un `500` solo aparece si la excepción ocurre fuera del handler (ver ms2-gap-11).
 - **Ids:** `foodId`, `recipeId`, `mealPlanId`, `mealTimeId` son GUID. `page`/`pageSize` son enteros.
-- **Enums:** `UnitOfMeasure` y `MealTimeType` viajan como **entero** (`1..8` y `1..5`), no como string.
+- **Enums:** `UnitOfMeasure` y `MealTimeType` viajan como **entero** (`1..8` y `1..5`), no como string, en los requests. En las respuestas `FoodDto.unitOfMeasure` y `durationType` son string (`"Gram"`, `"FIFTEEN_DAYS"`).
 - **Documentación interactiva:** Swagger/OpenAPI (Swashbuckle) cuando `Swagger:Enabled=true`.
 
 ## Resumen
@@ -13,14 +13,14 @@
 | Método | Ruta | Llamado por | Scope | Idempotente |
 |---|---|---|---|---|
 | POST | `/foods` | Frontend | `catalog.food:create` | no |
-| GET | `/foods/{id}` | Frontend, MS4 | `catalog.food:read` | sí |
+| GET | `/foods/{id}` | Frontend | `catalog.food:read` | sí |
 | GET | `/foods` | Frontend | `catalog.food:read` | sí |
 | GET | `/foods/category/{category}` | Frontend | `catalog.food:read` | sí |
 | PUT | `/foods` | Frontend | `catalog.food:edit` | sí |
 | POST | `/recipes` | Frontend | `catalog.recipe:create` | no |
 | POST | `/recipes/ingredients` | Frontend | `catalog.recipe:edit` | no |
 | DELETE | `/recipes/{recipeId}/ingredients/{foodId}` | Frontend | `catalog.recipe:edit` | no |
-| GET | `/recipes/{id}` | Frontend, MS4 | `catalog.recipe:read` | sí |
+| GET | `/recipes/{id}` | Frontend | `catalog.recipe:read` | sí |
 | GET | `/recipes` | Frontend | `catalog.recipe:read` | sí |
 | GET | `/recipes/{recipeId}/nutritional-info` | Frontend | `catalog.recipe:read` | sí |
 | POST | `/meal-plans` | Frontend | `catalog.mealPlan:create` | no |
@@ -32,6 +32,10 @@
 | GET | `/health` | Consul | (anónimo) | sí |
 
 Todas las rutas son relativas al servicio (`/api/v1/...`). En el gateway se antepone `/api/catalog` (p. ej. `POST /api/catalog/v1/foods`).
+
+MS4 es el único servicio que llama a MS2 por REST, y solo a `GET /api/catalog/v1/meal-plans/{id}` (`CatalogOptions.MealPlanPathTemplate`). Ningún otro MS consulta `/foods` ni `/recipes`.
+
+El kernel `Nur.Tricenter.Access` define además `catalog.food:manage`, `catalog.recipe:manage` y `catalog.mealPlan:manage` (entran en `CatalogPermission.PermissionsList`, así que existen como policy), pero **ningún endpoint los exige** (ver ms2-gap-12).
 
 ## Detalle por endpoint
 
@@ -74,8 +78,8 @@ Búsqueda por categoría (paginada, mismos parámetros `page`/`pageSize`). La ca
 | Código | Cuándo |
 |---|---|
 | 200 | Actualizado. |
-| 400 | Validación fallida o `UnitOfMeasure` inválido. |
-| 404 | Alimento inexistente. |
+| 400 | Solo validación de modelo de `[ApiController]` (`ProblemDetails`, antes del handler). |
+| 404 | **Cualquier** `Result.Fail` del handler: alimento inexistente, pero también `UnitOfMeasure` inválido, `NutritionalInfo` inválida o error de BD (el controller responde `NotFound` para todo fallo; ver ms2-gap-11). |
 
 **Importante:** `UpdateFood` dispara el evento de dominio `FoodUpdated` (que se proyecta al read model) pero **no** publica `food-nutritional-info-updated` ni ningún otro contrato de integración. Ver [gaps.md](./gaps.md).
 
@@ -162,15 +166,19 @@ Quita la asignación de una receta. `200` si existía; `400` si el plan/meal tim
 ### `GET /api/v1/meal-plans/{mealPlanId}`
 Composición completa del plan (read model), usada por MS4:
 ```json
-{ "success": true, "data": { "mealPlanId": "…", "name": "Plan keto 15 días", "days": [ { "dayNumber": 1, "mealTimes": [ { "mealTimeId": "…", "name": "Breakfast", "order": 1, "recipes": [ { "recipeId": "…", "recipeName": "Ensalada cesar", "ration": { "quantity": 1 }, "ingredients": [ { "foodId": "…", "foodName": "LECHUGA", "portion": { "quantity": 100 } } ] } ] } ] } ] } }
+{ "success": true, "data": { "mealPlanId": "…", "name": "Plan keto 15 días", "authorId": "…guid… | null", "authorName": "… | null", "days": [ { "dayNumber": 1, "mealTimes": [ { "mealTimeId": "…", "name": "Breakfast", "order": 1, "recipes": [ { "recipeId": "…", "recipeName": "Ensalada cesar", "ration": { "quantity": 1 }, "ingredients": [ { "foodId": "…", "foodName": "LECHUGA", "portion": { "quantity": 100 } } ] } ] } ] } ] } }
 ```
-`404` si no existe.
+`404` si no existe. `authorId` es el `AuthorId` del plan (null en los planes sembrados); `authorName` es el `UserName` de `PlanAuthors` y queda en `null` si el autor todavía no fue proyectado desde `user-published`. MS4 ignora ambos campos.
 
 ### `GET /api/v1/meal-plans`
-Lista de planes (`MealPlanDto` con días, meal times y recetas asignadas, sin ingredientes).
+Lista **plana** de planes (`ListMealPlansHandler`), sin días, tiempos de comida ni recetas:
+```json
+{ "success": true, "data": [ { "id": "…", "name": "Plan keto 15 días", "durationType": "FIFTEEN_DAYS", "totalDays": 15, "mealsPerDay": 3, "authorId": "…guid… | null", "authorName": "… | null" } ] }
+```
+`totalDays` se deriva de `durationType` (15 o 30). Sin paginación. Para la composición hay que pedir `GET /meal-plans/{id}`.
 
-### `GET /api/v1/health`
-Health check anónimo para Consul. Devuelve el estado de salud en JSON (escrito por `HealthReportWriter`).
+### `GET /health`
+Health check anónimo para Consul (mapeado en `/health`, fuera de `/api/v1`). Devuelve el estado de salud en JSON (escrito por `HealthReportWriter`). Incluye el chequeo de Postgres solo cuando el registro en Consul está activo (`ServiceRegistration:ServiceDiscoveryAddress` configurado).
 
 ## Mapeo de errores
 
@@ -178,9 +186,11 @@ No hay middleware global de excepciones; el mapeo es el que implementa cada cont
 
 | Situación | HTTP |
 |---|---|
-| Handler devuelve `Result.Fail` en un comando (validación de negocio, regla rota, `UnitOfMeasure` inválido, etc.) | 400 |
-| Handler devuelve `Result.Fail` en una lectura (entidad no encontrada) | 404 |
+| Handler devuelve `Result.Fail` en un comando (validación de negocio, regla rota, `UnitOfMeasure` inválido, etc.) | 400 (excepto `PUT /foods`: 404) |
+| Handler devuelve `Result.Fail` en una lectura por id (entidad no encontrada) | 404 |
+| Handler devuelve `Result.Fail` en un listado (`GET /foods`, `/foods/category/{c}`, `/recipes`, `/meal-plans`) | 400 |
+| Excepción dentro del handler (p. ej. BD caída) | capturada y devuelta como `Result.Fail(ex.Message)` → 400/404 según la fila anterior |
 | Validación de modelo de `[ApiController]` (campos requeridos, tipos, `[MinLength]`) | 400 `ProblemDetails` |
 | Sin token o token inválido | 401 |
 | Token válido sin el scope requerido | 403 |
-| Excepción no controlada | 500 (plano) |
+| Excepción fuera de un handler (pipeline, binding, arranque) | 500 (plano) |
