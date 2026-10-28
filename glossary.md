@@ -27,7 +27,9 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | Sucursal / punto de partida (`branchCoordinates`) | Coordenada fija desde la que sale todo repartidor; origen de la secuencia de entrega | MS5 |
 | Secuencia de entrega (`SequenceOrder`) | Orden de las paradas, calculado al iniciar la ruta con el vecino más cercano desde la sucursal | MS5 |
 | Evidencia de entrega (`DeliveryConfirmation`) | Foto, firma y momento de la entrega. Hoy queda solo en MS5: `DeliveryCompleted` no la lleva y a MS4 solo llega la hora de entrega (X-01) | MS5 → MS4 |
-| ClinicService | Nombre con que MS5 llama al servicio de contacto de pacientes de MS1. Hoy es un mock de Postman | MS1 |
+| ClinicService | Nombre con que MS5 llama al servicio de contacto de pacientes de MS1 (`POST /api/v1/patients/contact-information`). Hoy es un mock de Postman: el MS1 real no expone ese endpoint | MS1 |
+| Consulta inicial (`ConsultaInicial`) | Evaluación clínica de entrada (peso, altura, composición, antecedentes); se aprueba antes de armar el plan alimenticio | MS1 |
+| Plan alimenticio (`PlanAlimenticio`) | Plan clínico del paciente en MS1 (15 o 30 días, vigente o vencido, con evaluaciones de control). No es el plan del catálogo de MS2 | MS1 |
 
 ## Técnico
 | Término | Significado |
@@ -52,3 +54,6 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | `catalog.default` | Cola pasiva y durable de MS2 que acumula el historial completo de todo lo publicado (sink de auditoría) |
 | `nurtricenter.default` | Sink equivalente de MS5: cola durable enlazada a sus 10 exchanges, declarada por su worker y nunca consumida |
 | `nurtricenter` | Nombre de MS5 en Consul (y por eso su prefijo en el gateway, `/api/nurtricenter`) |
+| `identity-service` | Nombre de identity en Consul; prefijo `/api/identity-service` |
+| `platform:*` | Scope comodín del admin; al hacer login se expande a todos los scopes concretos del kernel |
+| YARP | Reverse proxy de .NET que usa el gateway; arma sus rutas desde Consul |

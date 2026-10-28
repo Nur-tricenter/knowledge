@@ -25,7 +25,7 @@ sequenceDiagram
   participant GW as Gateway (YARP)
   participant C as Consul
   participant MS2
-  GW->>C: (cada 30 s) instancias sanas de catalog-service
+  GW->>C: (cada 30 s) instancias sanas de catalog
   MS4->>GW: GET /api/catalog/v1/meal-plans/{id}<br/>Authorization: Bearer <token ms4-service>
   GW->>MS2: GET /api/v1/meal-plans/{id}
   MS2-->>MS4: 200 { days: [...] }
@@ -35,7 +35,9 @@ Ventaja: mover, escalar o reiniciar un servicio no rompe a quien lo llama, porqu
 
 ### 2.2 Identidad entre servicios: service accounts
 Cuando un servicio llama a otro **por su cuenta** (no en nombre de un usuario), se autentica con una **service account**: un usuario de identity con los scopes mínimos.
-- MS4 usa `ms4-service` con el scope `catalog.mealPlan:read`.
+- MS4 usa `ms4-service` con el scope `catalog.mealPlan:read` (→ MS2).
+- MS3 usa `ms3-service` con `deliveryCalendar.calendar:create` y `deliveryCalendar.productionOrder:read` (→ MS4).
+- Las crea `nur-tricenter-local/scripts/start-stack.*` al levantar el stack (ver [local-stack.md](./local-stack.md)).
 - El token se obtiene con `POST /api/identity-service/v1/auth/login`, se cachea hasta 60 s antes de vencer y se renueva una vez si el destino responde 401.
 
 ### 2.3 Resiliencia
@@ -75,10 +77,12 @@ Todos los contratos heredan de `IntegrationMessageContract` (kernel `Nur.Tricent
 ### 3.3 Publicar sin perder eventos: transactional outbox
 Problema: si guardas en tu BD y después publicas en RabbitMQ, y el proceso muere en el medio, el evento se pierde (o se publica algo que nunca se guardó).
 
-Solución usada por MS2, Identity y MS5 (`Joseco.Outbox.EFCore`):
+Solución usada por MS2, Identity, MS3, MS5 y MS1 (`Joseco.Outbox.EFCore` u outbox propio):
 1. El caso de uso guarda el cambio **y** el evento en una tabla `outbox`, en la **misma transacción**.
 2. Un worker lee la tabla y publica en RabbitMQ.
 3. Si falla, lo reintenta. La garantía es **at-least-once**: el evento puede llegar más de una vez.
+
+> Ojo: en MS3 el cambio y la fila de outbox se guardan en **dos** `SaveChanges` sin transacción (ver la ficha de MS3); un corte entre ambos pierde el evento.
 
 ### 3.4 Consumir sin duplicar: inbox idempotente
 Como la entrega es at-least-once, el consumidor tiene que tolerar duplicados. MS4 (y MS2) encadenan decoradores:
@@ -106,7 +110,7 @@ Detalle en [security.md](./security.md). En resumen: el gateway no autentica; ca
 | MS4 job de catálogo | Reemplaza las líneas de la orden existente (índice único por fecha) |
 | MS4 `PATCH /delivery-result` | Repetir el mismo resultado no hace nada |
 | Consumidores (MS2, MS4) | Inbox por `Id` de mensaje + upsert |
-| Publishers (MS2, Identity, MS5) | Outbox: reintentar no pierde ni inventa eventos |
+| Publishers (MS2, Identity, MS3, MS5) | Outbox: reintentar no pierde ni inventa eventos |
 
 ## 6. Matriz de comunicación actual
 Fuente: el código de cada repo a la fecha. La futura app visual la va a generar desde los `service.yaml`.
@@ -117,9 +121,12 @@ Fuente: el código de cada repo a la fecha. La futura app visual la va a generar
 | Frontend → MS4 | REST | direcciones, reprogramar, cancelar, consultar | MS4 lo expone; frontend sin repo |
 | MS4 → MS2 | REST + service account | `GET /api/catalog/v1/meal-plans/{id}` | funcionando |
 | MS5 → MS4 | Evento | `delivery-added-to-route`, `delivery-completed`, `delivery-failed` | MS4 los consume (pendiente de merge); falta que `PackageId` sea el `packId` (X-01, X-10). `PATCH /delivery-result` queda como vía manual |
-| MS3 → MS5 | evento | `package-validated`: un paquete aprobado por calidad, con dirección, tracking y coordenadas | MS3 publica (kernel 1.2.0); **MS5 lo consume** y agrega el paquete a la ruta de hoy (X-10 parcial: falta el `packId` de MS4) |
+| MS3 → MS5 | evento | `package-validated`: un paquete aprobado por calidad, con dirección, tracking y coordenadas | MS3 publica (copia local del contrato 1.2.0); MS5 lo consume **solo en su rama `dev`** (X-10 parcial: además falta el `packId` de MS4) |
 | Operaciones / app repartidor → MS5 | REST | repartidores, rutas, iniciar, entregar, fallar | MS5 lo expone **sin autenticación** (X-03); sin clientes en la org |
 | MS5 → ClinicService | REST directo, sin token | `POST /api/v1/patients/contact-information` | contra un mock de Postman |
-| MS2 → todos | eventos | food/recipe/meal-plan (5 exchanges) | publicado; MS4 consume 2 |
-| Identity → todos | eventos | user-published, user-updated | publicado; MS2 consume 1 |
-| MS5 → ? | eventos | 10 exchanges de logística | publicado (7 alcanzables); **sin colas de consumidor**, solo el sink `nurtricenter.default` |
+| MS2 → todos | eventos | food/recipe/meal-plan (5 exchanges) | publicado; MS3 consume 3, MS4 consume 2 |
+| Identity → todos | eventos | user-published, user-updated | `user-published` publicado y consumido por MS2; `user-updated` nunca se emite (no hay endpoint que lo dispare) |
+| MS3, MS4 → Identity | REST vía gateway | `POST /api/identity-service/v1/auth/login` | funcionando (token de service account) |
+| MS5 → MS4 / ? | eventos | 10 exchanges de logística | publicado (7 alcanzables); los 3 de entrega tienen cola `ms4.delivery-*`; los otros 7 solo llegan al sink `nurtricenter.default` |
+| MS1 → ? | evento | `paciente-published` | MS1 lo publica con contrato propio, fuera de la topología y del stack (X-13) |
+| Cualquiera → servicios | REST | gateway YARP, sin validar JWT | funcionando; MS1 no está registrado en Consul |

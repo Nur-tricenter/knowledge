@@ -12,7 +12,7 @@
 #   - Cada servicio que consume un evento debe tener su cola en `queues` del exchange correspondiente.
 
 status: draft
-updated: 2026-10-24
+updated: 2026-10-28
 
 exchanges:
   # ── Catálogo (MS2) ──────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ exchanges:
     payload: [PackageId, PatientId, ProductionOrderId, CatalogPlanId, ReleasedAt, DeliveryAddress, TrackingNumber, Latitude, Longitude]
     queues: [ms5.package-validated]
 
-  # ── Logística (MS5) — publicados vía outbox, pero SIN colas de consumidor en la topología ──
+  # ── Logística (MS5) — publicados vía outbox; solo los tres delivery-* tienen colas (ms4.*) ──
   # El worker de MS5 declara además el sink nurtricenter.default (durable, nunca consumido),
   # enlazado a estos 10 exchanges. No figura en queues porque no es una cola de consumidor.
   # Fuente del payload: nur-tricenter-shared-kernels → Messages/Logistics (Nur.Tricenter.Integration 1.1.0).

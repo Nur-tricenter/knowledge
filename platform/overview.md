@@ -16,15 +16,15 @@ Cada paso pertenece a un microservicio distinto, y el foco del diplomado está e
 
 | Id | Servicio | Responsabilidad | Repo | Estado de la ficha |
 |---|---|---|---|---|
-| MS1 | Pacientes (clínica) | Registro del paciente, datos clínicos y de contacto | _sin repo en la org_ | pendiente |
+| MS1 | Pacientes (clínica) | Paciente, consulta inicial, plan alimenticio y evaluaciones de control | [ClinicaNutricionalMicroservicio1](https://github.com/Juandcode/ClinicaNutricionalMicroservicio1) (fuera de la org; no integrado al stack) | [draft](../services/ms1-clinic/README.md) |
 | MS2 | Catálogo de planes y recetas | Alimentos, recetas y planes nutricionales por número de día | [ms2-plans-and-recipes-catalog](https://github.com/Nur-tricenter/ms2-plans-and-recipes-catalog) | [complete](../services/ms2-catalog/README.md) |
 | MS3 | Contratación y producción | Contrato, cobro, calendario en MS4, orden de producción diaria y control de calidad de paquetes | [ms3-contract-and-production](https://github.com/Nur-tricenter/ms3-contract-and-production) | [complete](../services/ms3-contracting/README.md) |
 | MS4 | Calendario de entregas | Calendario por paciente, reglas de cambio (48h), orden de producción consolidada | [ms4-delivery-schedule-management](https://github.com/Nur-tricenter/ms4-delivery-schedule-management) | [completa](../services/ms4-delivery-calendar/README.md) |
-| MS5 | Logística y entregas | Repartidores, ruta del día con la secuencia de paradas y resultado de cada entrega (evidencia o motivo del fallo). Publica 10 eventos; hoy no avisa el resultado a MS4 | [ms5-logistics-and-delivery](https://github.com/Nur-tricenter/ms5-logistics-and-delivery) | [complete](../services/ms5-logistics/README.md) |
-| — | Identity | Usuarios, scopes y emisión de JWT | [nur-tricenter-identity](https://github.com/Nur-tricenter/nur-tricenter-identity) | pendiente |
-| — | API Gateway | Punto de entrada único, ruteo dinámico vía Consul | [nur-tricenter-api-gateway](https://github.com/Nur-tricenter/nur-tricenter-api-gateway) | pendiente |
+| MS5 | Logística y entregas | Repartidores, ruta del día con la secuencia de paradas y resultado de cada entrega (evidencia o motivo del fallo). Publica 10 eventos; MS4 consume los de entrega para cerrar cada día | [ms5-logistics-and-delivery](https://github.com/Nur-tricenter/ms5-logistics-and-delivery) | [complete](../services/ms5-logistics/README.md) |
+| — | Identity | Usuarios, scopes y emisión de JWT | [nur-tricenter-identity](https://github.com/Nur-tricenter/nur-tricenter-identity) | [complete](../services/identity-service/README.md) |
+| — | API Gateway | Punto de entrada único, ruteo dinámico vía Consul | [nur-tricenter-api-gateway](https://github.com/Nur-tricenter/nur-tricenter-api-gateway) | [complete](../services/gateway-api/README.md) |
 
-La descripción de MS1 viene de cómo lo referencian los demás servicios (llamadas y colas declaradas). Su owner debe confirmarla al cargar su ficha.
+MS1 tiene código (repo externo), pero ningún servicio lo llama de verdad: MS5 usa un mock de su `ClinicService` y MS3 trabaja con pacientes simulados. Su ficha está en `draft` hasta que se integre (X-04, X-13).
 
 Repos de soporte (no son microservicios de negocio):
 - [nur-tricenter-shared-kernels](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels): paquetes NuGet compartidos (`Access`, `Security`, `Integration`, `Observability`).
@@ -52,10 +52,11 @@ sequenceDiagram
   MS3->>MS4: GET /calendars/active-tomorrow (orden de producción)
   Note over MS3: cocina produce
   MS5->>MS5: arma ruta y entrega
-  MS5--)MS4: PATCH /delivery-result (pendiente de implementar en MS5)
+  MS3--)MS5: evento package-validated (paquetes listos; MS5 lo consume solo en su rama dev)
+  MS5--)MS4: eventos delivery-added-to-route / delivery-completed / delivery-failed
 ```
 
-Las flechas continuas son REST y las punteadas son eventos RabbitMQ. El último paso es un gap conocido: ver [../gaps/cross-service-gaps.md](../gaps/cross-service-gaps.md).
+Las flechas continuas son REST y las punteadas son eventos RabbitMQ. Los dos últimos pasos todavía no cierran de punta a punta: MS5 consume `package-validated` solo en `dev`, y MS4 solo reconoce el día si el `PackageId` es su `packId` (X-01, X-10 en [../gaps/cross-service-gaps.md](../gaps/cross-service-gaps.md)).
 
 ## Actores humanos
 | Actor | Interactúa con | Cómo |
