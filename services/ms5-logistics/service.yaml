@@ -192,3 +192,6 @@ gaps:
   - id: ms5-gap-14
     summary: Enums como número en dos respuestas y como texto en las demás; un test de integración no prueba lo que dice su nombre.
     severity: low
+  - id: ms5-gap-15
+    summary: No migra al arrancar y en la plataforma depende del .env con la cadena de Neon; la opción offline usa la BD ms5_logistics del Postgres compartido.
+    severity: low
