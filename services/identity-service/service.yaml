@@ -75,7 +75,7 @@ gaps:
     summary: Sin endpoints para listar, cambiar scopes, desactivar, cambiar contraseña o revocar; user-updated nunca se publica.
     severity: medium
   - id: identity-gap-03
-    summary: El docker-compose de nur-tricenter-local perdió el include de identity; el stack local queda sin emisor de tokens (X-12).
+    summary: Resuelto en nur-tricenter-local#7 (X-12). El docker-compose de nur-tricenter-local había perdido el include de identity y el stack quedaba sin emisor de tokens.
     severity: high
   - id: identity-gap-04
     summary: El token no relaciona la cuenta con el PatientId de MS1; impide la autorización por objeto (X-08).

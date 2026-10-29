@@ -58,7 +58,7 @@ Todas las llamadas REST entran por el gateway (`/api/catalog/**` para llegar a M
 
 - **.NET 8**, Clean Architecture + DDD, CQRS con MediatR, EF Core 9 + PostgreSQL (un solo DB, tres schemas: `write`, `read`, `outbox`).
 - **RabbitMQ** vía `Joseco.Communication.External.RabbitMQ` 1.1.0, con **outbox transaccional** (`Joseco.Outbox.EFCore`) e **inbox idempotente**.
-- **Kernels** `Nur.Tricenter.Access`, `.Security`, `.Integration` y `.Observability` en **1.1.0** (`Directory.Packages.props`).
+- **Kernels** `Nur.Tricenter.Access`, `.Security`, `.Integration` y `.Observability` en **1.2.0** (`Directory.Packages.props`, MS2#3).
 - **Consul** (en la plataforma se registra como `catalog`; el default del código es `catalog-service`), **API Gateway YARP**.
 - **Procesos:** `catalog-api` (puerto 8080, se registra en Consul) y `catalog-workerservice` (outbox drain + consumidor de `user-published` + registrar de `catalog.default`; **no** se registra en Consul).
 - **Migraciones:** el default (`appsettings.json`) es `Migrations:ApplyOnStartup=false` y migrar con `dotnet Catalog.App.dll --migrate` (one-shot, aplica `DomainDbContext` y `StoredDbContext`). En la **plataforma** no hay contenedor de migración: `catalog-api` migra al arrancar (`Migrations__ApplyOnStartup=true` en `catalog.compose.yml`) y además `nur-tricenter-local/scripts/start-stack.*` corre `Catalog.App.dll --migrate` desde el host contra `localhost:5433` (idempotente). En **standalone** lo hace el servicio one-shot `webapi-migrate`.

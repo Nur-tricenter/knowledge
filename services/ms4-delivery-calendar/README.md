@@ -25,7 +25,7 @@ Cuando un paciente contrata un plan nutricional, lo que en realidad compra es **
 |---|---|---|---|
 | MS3 Contratación | entrante | REST vía gateway | Crear calendario; leer la orden de producción de mañana |
 | Frontend (paciente) | entrante | REST vía gateway | Ver calendario, poner dirección, reprogramar, cancelar |
-| MS5 Logística | entrante | Evento RabbitMQ (y REST como vía manual) | `delivery-added-to-route`, `delivery-completed`, `delivery-failed` cierran el día; requieren que `PackageId` sea el `packId` |
+| MS5 Logística | entrante | Evento RabbitMQ (y REST como vía manual) | `delivery-added-to-route`, `delivery-completed`, `delivery-failed` cierran el día; el día se identifica por `DeliveryDayId`, luego `PackageId` numérico y, en último caso, por paciente |
 | Operaciones | entrante | REST | Disparar el job diario de catálogo |
 | MS2 Catálogo | saliente | REST vía gateway + service account | Menú del día N del plan |
 | Identity | saliente | REST vía gateway | Login de la service account `ms4-service` |
@@ -37,7 +37,7 @@ Cuando un paciente contrata un plan nutricional, lo que en realidad compra es **
 flowchart LR
   MS3[MS3 Contratación] -- "POST /schedule<br/>GET /active-tomorrow" --> MS4((MS4<br/>Calendario))
   FE[Frontend paciente] -- "GET / PUT / POST<br/>calendars/{id}/…" --> MS4
-  MS5[MS5 Logística] -. "delivery-added-to-route / completed / failed<br/>(PackageId = packId pendiente)" .-> MS4
+  MS5[MS5 Logística] -. "delivery-added-to-route / completed / failed<br/>(enlaza por DeliveryDayId)" .-> MS4
   OPS[Operaciones] -- "POST resolve-daily-catalog" --> MS4
   MS4 -- "GET /meal-plans/{id}<br/>service account" --> MS2[MS2 Catálogo]
   MS4 -- "login ms4-service" --> ID[Identity]

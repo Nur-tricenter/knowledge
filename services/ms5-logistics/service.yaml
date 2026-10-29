@@ -1,5 +1,5 @@
 # Ficha estructurada de MS5. Fuente: código de Nur-tricenter/ms5-logistics-and-delivery, rama main (4aabeb4, revisado 2026-10-28).
-# Lo que existe solo en la rama dev (consumidor de package-validated) se menciona en gaps, no aquí.
+# Nota 2026-10-29: el consumidor de package-validated ya está en main (MS5#3). events_consumed de abajo sigue sin reflejarlo; lo actualiza el owner de MS5.
 
 id: ms5
 name: Logística y entregas (Logistics and Delivery)
@@ -144,7 +144,7 @@ events_published:
     outbox: true
 
 # En main el worker es solo productor. PackageValidatedConsumer (cola ms5.package-validated) existe
-# solo en la rama dev, sin merge (ms5-gap-03).
+# antes del 2026-10-29 solo en la rama dev (ms5-gap-03); desde MS5#3 consume ms5.package-validated en main.
 events_consumed: []
 
 gaps:

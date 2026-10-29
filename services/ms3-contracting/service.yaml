@@ -199,21 +199,21 @@ gaps:
     severity: high
     blocked_by: ms1
   - id: ms3-gap-03
-    summary: PackageValidated no trae el packId de MS4 ni el tipo de PatientId que usa MS5; MS5 (rama dev) y MS4 (PR #3) no pueden correlacionar la entrega con el día.
+    summary: El packId de MS4 ya viaja en PackageValidated.DeliveryDayId (kernel 1.4.0, MS3#6); falta alinear el tipo de PatientId (string en MS5, Guid en MS3 y MS4).
     severity: high
     blocked_by: ms5
   - id: ms3-gap-04
     summary: Los errores de dominio devuelven 500 y validate deja el lote a medias si un paquete falla.
     severity: medium
   - id: ms3-gap-05
-    summary: MS3 no referencia ningún paquete Nur.Tricenter.*; los contratos de MS3 y del catálogo son copias locales equivalentes del kernel 1.2.0.
+    summary: MS3 no referencia ningún paquete Nur.Tricenter.*; los contratos de MS3 y del catálogo son copias locales; la de PackageValidated sigue el formato del kernel 1.4.0 (MS3#5, #6).
     severity: medium
   - id: ms3-gap-06
     summary: Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario.
     severity: medium
     blocked_by: ms4
   - id: ms3-gap-07
-    summary: La orden de producción real depende del campo menu de active-tomorrow, que solo está en una rama de MS4 sin PR.
+    summary: Resuelto. MS4 devuelve el campo menu de active-tomorrow en main (MS4#4) y MS3 arma la orden desde ahí.
     severity: medium
     blocked_by: ms4
   - id: ms3-gap-08

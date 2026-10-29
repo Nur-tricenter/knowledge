@@ -50,7 +50,7 @@ Todas las llamadas entrantes pasan por el gateway con el prefijo `/api/identity-
 
 ## Stack y despliegue
 - **.NET 8** (lo fijan los kernels), ASP.NET Core **Controllers**, EF Core 9 + Npgsql (PostgreSQL), MediatR 12.4.1, `Joseco.DDD.Core`, `Joseco.Outbox.EFCore`, `Joseco.Communication.External.RabbitMQ` 1.1.0, `BCrypt.Net-Next`, Consul, Swashbuckle (solo en Development).
-- **Kernels** `Nur.Tricenter.*` **1.1.0**: `Security` (validación JWT + policies), `Access` (nombres de scopes y expansión de `platform:*`), `Integration` (contratos `UserPublished`/`UserChanged`) y `Observability` (Serilog + OpenTelemetry, nombre de servicio `Nur.Identity`).
+- **Kernels** `Nur.Tricenter.*` **1.2.0** (identity#2; los `Joseco.*` siguen en 1.1.0): `Security` (validación JWT + policies), `Access` (nombres de scopes y expansión de `platform:*`), `Integration` (contratos `UserPublished`/`UserChanged`) y `Observability` (Serilog + OpenTelemetry, nombre de servicio `Nur.Identity`).
 - **Proyectos:** `Identity.App` (HTTP), `Identity.Application` (agregado `User`, eventos y handlers; no hay proyecto Domain aparte), `Identity.Infrastructure` (EF, outbox, BCrypt, Consul, seed) e `Identity.WorkerService` (outbox → RabbitMQ y seed del admin). **No hay proyecto de tests.**
 - **Procesos en plataforma** (`identity.compose.yml`):
 
@@ -62,7 +62,7 @@ Todas las llamadas entrantes pasan por el gateway con el prefijo `/api/identity-
 
 - **BD:** `nur_tricenter_identity` en el Postgres compartido (tablas `Users`, `UserScopes` y `outbox.outboxMessage`).
 - **Hay también un compose standalone** (`docker-compose.yml`) con su propio Postgres, la API en el puerto host 7081 y sin Consul.
-- ⚠ **Hoy el stack local no levanta identity:** `nur-tricenter-local/compose/docker-compose.yml` perdió el `include` de `identity.compose.yml` (ver [gaps.md](./gaps.md), identity-gap-03).
+- El `include` de `identity.compose.yml` en `nur-tricenter-local/compose/docker-compose.yml` se había perdido; volvió en nur-tricenter-local#7 (ver [gaps.md](./gaps.md), identity-gap-03).
 
 ## Índice de la ficha
 - [domain.md](./domain.md): modelo de dominio, estados e invariantes

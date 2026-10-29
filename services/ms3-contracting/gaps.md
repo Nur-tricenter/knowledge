@@ -32,7 +32,7 @@
 - **Qué haría falta:** MS1 con un evento de paciente publicado (para una copia local, como los planes) o un endpoint. MS5 ya espera un contrato propio de MS1 (X-04); conviene acordar uno solo.
 
 ### ms3-gap-03 — El evento no calza con MS5 ni con MS4
-> **Actualización 2026-10-29:** el `packId` de MS4 ya viaja en `PackageValidated.DeliveryDayId` (kernel 1.4.0, [kernel#5](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/5)). MS3 lo envía ([MS3#6](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/6)), MS5 lo reenvía ([MS5#5](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/5)) y MS4 lo usa para enlazar la entrega (MS4#6, reunido en MS4#8, pendiente de merge). Es `null` si no hay calendario que coincida. Siguen abiertos el tipo de `PatientId` (`string` en MS5, `Guid` en MS3/MS4) y las coordenadas nulas. El texto de abajo es el análisis original.
+> **Actualización 2026-10-29:** el `packId` de MS4 ya viaja en `PackageValidated.DeliveryDayId` (kernel 1.4.0, [kernel#5](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/5)). MS3 lo envía ([MS3#6](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/6)), MS5 lo reenvía ([MS5#5](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/5)) y MS4 lo usa para enlazar la entrega (MS4#6, reunido en MS4#8, mergeado). Es `null` si no hay calendario que coincida. Siguen abiertos el tipo de `PatientId` (`string` en MS5, `Guid` en MS3/MS4) y las coordenadas nulas. El texto de abajo es el análisis original.
 
 - **Qué pasa:** el owner de MS5 decidió que el `packageId` del evento sea el `packId` de MS4, lo que además cerraría X-01 (MS5 podría informar el resultado de cada día). `PackageValidated.PackageId` es el id del paquete de MS3, un GUID propio. MS5 usa `string` para `patientId` y MS3/MS4 usan `Guid`. `AddressCoordinates` no admite nulos en MS5, y el evento los manda `null` si no hay calendario que coincida.
 - **Impacto:** MS5 ya consume la cola (rama `dev`), pero no puede correlacionar la entrega con el día de MS4. MS4 consume los eventos de entrega de MS5 (PR #3 de MS4, abierto) y espera que su `PackageId` sea el `packId` entero; con el GUID de MS3 no puede cerrar el día (`Delivered`/`Failed`).
@@ -56,7 +56,7 @@
 ### ms3-gap-07 — `menu` en `active-tomorrow`
 - **Qué pasa:** MS3 arma la orden con el `menu` de cada entrega. Resuelto: `main` de MS4 ya devuelve `menu` en `active-tomorrow` (MS4#4, mergeado el 2026-10-28). Antes `ActiveTomorrowLineDto` no tenía `Menu` y el cambio estaba en la rama `feat/active-tomorrow-menu`, sin PR (revisado 2026-10-28).
 - **Impacto:** sin ese cambio, la orden diaria solo funciona con los 3 planes simulados; con un plan real responde 422 `NO_RECIPES` (antes era un 500).
-- **Qué haría falta:** abrir el PR de esa rama en MS4, revisarlo y mergearlo (aditivo: no rompe a los demás consumidores).
+- **Qué haría falta:** nada: el cambio se mergeó en MS4#4 (era aditivo, no rompe a los demás consumidores).
 
 ### ms3-gap-08 — Precio del plan
 `MealPlanPublished` no trae el precio. El plan proyectado se expone con costo 0; nada lo usa hoy porque el monto llega en el pago. Si MS3 tuviera que validarlo, MS2 debe agregarlo al contrato.

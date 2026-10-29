@@ -117,7 +117,7 @@ Fuente: el código de cada repo a la fecha. La futura app visual la va a generar
 
 | Origen → destino | Estilo | Qué | Estado |
 |---|---|---|---|
-| MS3 → MS4 | REST + service account `ms3-service` | `POST /schedule`, `GET /calendars/active-tomorrow` | funcionando (probado en la plataforma); el `menu` de `active-tomorrow` está propuesto a MS4 |
+| MS3 → MS4 | REST + service account `ms3-service` | `POST /schedule`, `GET /calendars/active-tomorrow` | funcionando (probado en la plataforma); el `menu` de `active-tomorrow` ya lo devuelve MS4 (MS4#4) |
 | Frontend → MS4 | REST | direcciones, reprogramar, cancelar, consultar | MS4 lo expone; frontend sin repo |
 | MS4 → MS2 | REST + service account | `GET /api/catalog/v1/meal-plans/{id}` | funcionando |
 | MS5 → MS4 | Evento | `delivery-added-to-route`, `delivery-completed`, `delivery-failed` | MS4 los consume (MS4#3, mergeado); el día se identifica con `DeliveryDayId` (kernel 1.4.0, MS5#5), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 resueltos; MS4#8). `PATCH /delivery-result` queda como vía manual |
