@@ -88,7 +88,7 @@ sequenceDiagram
 - **Camino feliz:** `ReadyForProduction` (o `InProduction`) → `Delivered`/`Failed`, guardando la evidencia (foto, firma y momento).
 - **Errores:** 404 si el día no existe; 422 si el día no estaba listo o si se envía un resultado distinto al ya aplicado.
 - **Idempotencia:** repetir el mismo resultado es un no-op. Así un reintento de MS5 no rompe el estado.
-- **Estado real:** MS5 ya publica los tres eventos y MS4 los consume (pendiente de merge). Pero el `PackageId` que MS5 recibe de MS3 es hoy un GUID de MS3, no el `packId`: MS4 no encuentra el día y descarta el evento con un warning (ms3-gap-03, X-10). Hasta que MS3 mande el `packId`, los días se quedan en `ReadyForProduction`.
+- **Estado real:** MS5 ya publica los tres eventos y MS4 los consume (MS4#3). El `PackageId` que MS5 recibe de MS3 es un GUID de MS3, no el `packId`; por eso `DeliveryAddedToRoute` trae además `DeliveryDayId` (kernel 1.4.0). MS4 busca el día por `DeliveryDayId`, luego por `PackageId` numérico y por último por paciente (el día más temprano en `ReadyForProduction`/`InProduction` sin entrega). Sin ninguna coincidencia, la entrega queda sin enlazar y el día no se cierra (ms3-gap-03, X-10).
 - **Errores en el camino por eventos:** entrega sin enlace, día inexistente o transición inválida (por ejemplo, día cancelado) → warning y mensaje confirmado, sin reintentos.
 
 ```mermaid

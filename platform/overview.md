@@ -24,7 +24,7 @@ Cada paso pertenece a un microservicio distinto, y el foco del diplomado está e
 | — | Identity | Usuarios, scopes y emisión de JWT | [nur-tricenter-identity](https://github.com/Nur-tricenter/nur-tricenter-identity) | [complete](../services/identity-service/README.md) |
 | — | API Gateway | Punto de entrada único, ruteo dinámico vía Consul | [nur-tricenter-api-gateway](https://github.com/Nur-tricenter/nur-tricenter-api-gateway) | [complete](../services/gateway-api/README.md) |
 
-MS1 tiene código (repo externo), pero ningún servicio lo llama de verdad: MS5 usa un mock de su `ClinicService` y MS3 trabaja con pacientes simulados. Su ficha está en `draft` hasta que se integre (X-04, X-13).
+MS1 tiene código (repo externo), pero ningún servicio lo llama de verdad: MS5 dejó de llamarlo (MS5#4: el nombre del paciente llega en `PackageValidated`) y MS3 trabaja con pacientes simulados. Su ficha está en `draft` hasta que se integre (X-04, X-13).
 
 Repos de soporte (no son microservicios de negocio):
 - [nur-tricenter-shared-kernels](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels): paquetes NuGet compartidos (`Access`, `Security`, `Integration`, `Observability`).
@@ -52,11 +52,11 @@ sequenceDiagram
   MS3->>MS4: GET /calendars/active-tomorrow (orden de producción)
   Note over MS3: cocina produce
   MS5->>MS5: arma ruta y entrega
-  MS3--)MS5: evento package-validated (paquetes listos; MS5 lo consume solo en su rama dev)
+  MS3--)MS5: evento package-validated (paquetes listos; MS5 lo consume en main desde MS5#3)
   MS5--)MS4: eventos delivery-added-to-route / delivery-completed / delivery-failed
 ```
 
-Las flechas continuas son REST y las punteadas son eventos RabbitMQ. Los dos últimos pasos cierran de punta a punta: MS5 consume `package-validated` y MS4 reconoce el día por `DeliveryDayId` (kernel 1.4.0), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 en [../gaps/cross-service-gaps.md](../gaps/cross-service-gaps.md); MS4#8 pendiente de merge).
+Las flechas continuas son REST y las punteadas son eventos RabbitMQ. Los dos últimos pasos cierran de punta a punta: MS5 consume `package-validated` y MS4 reconoce el día por `DeliveryDayId` (kernel 1.4.0), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 en [../gaps/cross-service-gaps.md](../gaps/cross-service-gaps.md); MS4#8).
 
 ## Actores humanos
 | Actor | Interactúa con | Cómo |

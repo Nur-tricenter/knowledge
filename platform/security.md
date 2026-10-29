@@ -46,9 +46,9 @@ Usuarios técnicos para las llamadas servicio → servicio, con **mínimo privil
 | `ms4-service` | MS4 | `catalog.mealPlan:read` | Leer la composición del plan en MS2 |
 | `ms3-service` | MS3 | `deliveryCalendar.calendar:create`, `deliveryCalendar.productionOrder:read` | Crear el calendario de un contrato y leer la orden de producción en MS4 |
 
-MS5 **no tiene service account**: su única llamada saliente (ClinicService, hoy un mock de Postman) va sin token, y no llama a MS4 (el cierre del ciclo va por eventos que MS4 consume). Si se prefiriera cerrar X-01 por REST, haría falta `ms5-service` con el scope `deliveryCalendar.deliveryResult:edit`.
+MS5 **no tiene service account**: ya no hace llamadas salientes (dejó de llamar al ClinicService en MS5#4), y no llama a MS4 (el cierre del ciclo va por eventos que MS4 consume). Si se prefiriera cerrar X-01 por REST, haría falta `ms5-service` con el scope `deliveryCalendar.deliveryResult:edit`.
 
-Las crea `nur-tricenter-local/scripts/start-stack.*` después de levantar el stack: login como admin y `POST /api/identity-service/v1/users` (409 = ya existe). Sin identity en el compose (X-12), este paso falla.
+Las crea `nur-tricenter-local/scripts/start-stack.*` después de levantar el stack: login como admin y `POST /api/identity-service/v1/users` (409 = ya existe). Cuando identity estaba fuera del compose (X-12, resuelto en nur-tricenter-local#7), este paso fallaba.
 
 Cuando agregues una service account, documéntala aquí, en `start-stack.*` y en el `service.yaml` (`sync_calls[].auth: service-account:<cuenta>`).
 

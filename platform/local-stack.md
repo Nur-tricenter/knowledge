@@ -1,14 +1,10 @@
 # Stack local — `nur-tricenter-local`
 
-Runbook para levantar **toda** la plataforma en una máquina con Docker Compose y comprobar que funciona. Fuente: scripts y compose de `Nur-tricenter/nur-tricenter-local` (`main` 4a1d700, revisado el 2026-10-28).
+Runbook para levantar **toda** la plataforma en una máquina con Docker Compose y comprobar que funciona. Fuente: scripts y compose de `Nur-tricenter/nur-tricenter-local` (`main` posterior a nur-tricenter-local#7, revisado el 2026-10-29).
 
-> ✅ **2026-10-28: el stack completo se levantó y se recorrió de punta a punta** con las ramas de los PR abiertos: [nur-tricenter-local#7](https://github.com/Nur-tricenter/nur-tricenter-local/pull/7) (arregla X-12), [MS5#3](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/3) (`dev` → `main`), [MS3#3](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/3), [MS3#4](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/4) y [MS4#5](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/5). Ver la sección [Prueba de punta a punta](#prueba-de-punta-a-punta).
+> ✅ **El stack se recorrió de punta a punta el 2026-10-28, con las ramas de los PR; esos PR ya están en `main`** (no se repitió la corrida desde `main`). Ya están en `main` [nur-tricenter-local#7](https://github.com/Nur-tricenter/nur-tricenter-local/pull/7) (arregla X-12: vuelve identity, MS1 queda fuera del compose), [MS5#3](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/3) (consumidor de `package-validated`), [MS3#3](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/3), [MS3#4](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/4) y los PR de `DeliveryDayId` (kernel#5, MS3#6, MS5#5, MS4#6 y #8). Ver la sección [Prueba de punta a punta](#prueba-de-punta-a-punta).
 >
-> ⚠ **Hasta que se mergee nur-tricenter-local#7, el stack no levanta tal como está en `main`** (gap transversal [X-12](../gaps/cross-service-gaps.md)):
-> 1. `compose/docker-compose.yml` ya no incluye `../../nur-tricenter-identity/identity.compose.yml` (lo reemplazó el include de MS1 en el commit `acce166`). Sin identity, el login y la creación de service accounts fallan, y MS3/MS4 no obtienen token.
-> 2. Incluye `../../ms1-clinica-nutricional/ms1.compose.yml`, que **no existe** en el repo de MS1, y los scripts compilan `src/ClinicaNutricional.Api` y `src/ClinicaNutricional.WorkerService`, que tampoco existen (los proyectos reales están en la raíz: `GestionClinicaNutricionalService.WebApi/`, `GestionClinicaNutricional.WorkerService/`). `docker compose up` falla por el include faltante.
->
-> Mientras no se corrija en `nur-tricenter-local`, ver [Arreglo temporal](#arreglo-temporal-mientras-x-12-siga-abierto).
+> Si MS1 sigue sin fragmento de plataforma, queda comentado en `compose/docker-compose.yml` (ver su [ficha](../services/ms1-clinic/README.md) y X-13). Tras actualizar MS5, aplica sus migraciones (`AddInboxMessages`, `AddPatientNameToDelivery`, `AddDeliveryDayIdToDelivery`): MS5 no migra al arrancar.
 
 ## 1. Requisitos
 | Requisito | Para qué |
@@ -40,8 +36,8 @@ Todos los repos van **como hermanos** de `nur-tricenter-local`. `scripts/setup-p
 |---|---|---|
 | `docker-compose.infra.yml` | Plataforma | Postgres, RabbitMQ, Consul |
 | `../../ms2-plans-and-recipes-catalog/catalog.compose.yml` | MS2 | `catalog-api`, `catalog-workerservice` |
-| `../../nur-tricenter-identity/identity.compose.yml` — **falta** (X-12) | Identity | `identity-migrate` (one-shot), `identity-api`, `identity-workerservice` |
-| `../../ms1-clinica-nutricional/ms1.compose.yml` — **no existe** (X-12) | MS1 | — |
+| `../../nur-tricenter-identity/identity.compose.yml` (vuelve en #7, X-12) | Identity | `identity-migrate` (one-shot), `identity-api`, `identity-workerservice` |
+| `../../ms1-clinica-nutricional/ms1.compose.yml` — comentado: ese archivo no existe (X-12, X-13) | MS1 | — |
 | `../../ms4-delivery-schedule-management/ms4.compose.yml` | MS4 | `delivery-calendar-migrate` (one-shot), `delivery-calendar-api`, `delivery-calendar-workerservice` |
 | `../../${NURTRICENTER_REPO_DIR:-ms5-logistics-and-delivery}/nurtricenter.compose.yml` | MS5 | `nurtricenter-api`, `nurtricenter-workerservice` |
 | `../../ms3-contract-and-production/contracting.compose.yml` | MS3 | `contracting-api`, `contracting-workerservice` |
@@ -78,7 +74,7 @@ cd nur-tricenter-local
 ```
 `start-stack` hace, en orden:
 1. `docker rm -f` de los contenedores esperados (los volúmenes se conservan) y crea la red si falta.
-2. `dotnet build -c Debug` de MS1 (rutas inválidas, X-12), MS2 (App + Worker), identity (App + Worker), MS5 (Api + Worker), gateway, MS4 (Api + Worker; el `.ps1` corta si falla) y MS3 (Api + Worker).
+2. `dotnet build -c Debug` de MS2 (App + Worker), identity (App + Worker), MS5 (Api + Worker), gateway, MS4 (Api + Worker; el `.ps1` corta si falla) y MS3 (Api + Worker).
 3. `docker compose -f compose/docker-compose.yml -f compose/docker-compose.infra.yml -p nur-tricenter up -d`.
 4. Migra el catálogo desde el host (`Catalog.App.dll --migrate` contra `localhost:5433`). Identity y MS4 migran con su contenedor one-shot `*-migrate`; MS3 migra al arrancar.
 5. Hace login como el **admin** sembrado por el worker de identity (`DefaultUser__*`, con `platform:*`) por el gateway: `POST /api/identity-service/v1/auth/login`, hasta 24 reintentos de 5 s.
@@ -133,7 +129,7 @@ python scripts/e2e-smoke.py 00000000-0000-0000-0000-000000000003 --fail  # entre
 | Repartidor y ruta de hoy | MS5 | REST anónimo (la ruta tiene que existir antes que el paquete) |
 | `daily-order`, paquete, `assemble`, `label`, `validate` | MS3 | REST; MS3 → MS4 `active-tomorrow`; outbox → `package-validated` |
 | Entrega agregada a la ruta | MS5 | consume `ms5.package-validated` → publica `delivery-added-to-route` |
-| Enlace entrega → día | MS4 | consume `ms4.delivery-added-to-route` (por paciente, ver MS4#5) |
+| Enlace entrega → día | MS4 | consume `ms4.delivery-added-to-route`; usa `DeliveryDayId` (kernel 1.4.0) y, si falta, el `PackageId` numérico o el paciente |
 | `start` y `deliver` / `fail` | MS5 | REST → `delivery-completed` / `delivery-failed` |
 | Día `Delivered` / `Failed` | MS4 | consume `ms4.delivery-*` |
 
@@ -145,14 +141,6 @@ Resultado del 2026-10-28: **verde** con entrega exitosa (2 pacientes) y fallida 
 - Asignar las recetas unos segundos antes de `resolve-daily-catalog`: el read model de MS2 es eventual.
 - Para empezar de cero los datos de negocio: `DROP DATABASE … WITH (FORCE)` de `nur_tricenter_contracting`, `ms4_delivery_calendar` y `ms5_logistics`, volver a correr `start-stack` (las recrea) y migrar MS5.
 
-## Arreglo temporal mientras X-12 siga abierto
-(Innecesario con la rama `fix/local-stack` de nur-tricenter-local#7.)
-
-En tu copia local de `nur-tricenter-local`, sin commitear:
-1. `compose/docker-compose.yml`: agregar `- path: ../../nur-tricenter-identity/identity.compose.yml` y comentar la línea de `ms1.compose.yml`.
-2. `scripts/start-stack.ps1` / `.sh`: comentar los dos `dotnet build` de MS1.
-3. Correr `start-stack` normalmente. MS1 queda fuera del stack (ver su [ficha](../services/ms1-clinic/README.md)).
-
 ## Convenciones para que un servicio entre al stack
 1. Publicar un fragmento `<servicio>.compose.yml` en su repo, con contenedores `nur-tricenter-<rol>`.
 2. Declarar la red `nur-tricenter-net` como `external: true`, **sin** `name:`. Compose 2.29 rechaza declaraciones distintas de la misma red entre archivos incluidos.
@@ -162,9 +150,8 @@ En tu copia local de `nur-tricenter-local`, sin commitear:
 6. Agregar su `dotnet build` a `start-stack.*` y su contenedor a la lista de limpieza del script.
 
 ## Problemas conocidos
-- X-12: identity fuera del compose e include/builds de MS1 rotos (arriba). Arreglado en nur-tricenter-local#7, pendiente de merge.
+- X-12 (identity fuera del compose, include y builds de MS1 rotos): resuelto en nur-tricenter-local#7, mergeado el 2026-10-28.
 - Un volumen de Postgres anterior a un servicio no tiene su BD (los scripts de `postgres-init/` corren solo con un volumen nuevo). Desde #7, `start-stack` las crea siempre.
 - `Joseco.Communication.External.RabbitMQ` 1.1.0 ignora `RabbitMqSettings:Port`: el broker tiene que estar en 5672.
-- `start-stack.ps1` no revisa el código de salida de la mayoría de los `dotnet build` (solo MS4): un build fallido aparece recién como un contenedor que no arranca.
-- El README de `nur-tricenter-local` está desactualizado: lo llama `nur-tricenter-orchestrator`, su tabla omite MS3, MS4, MS1 y los `*-migrate`, y los comentarios hablan de "20 colas".
+- El README de `nur-tricenter-local` está desactualizado: lo llama `nur-tricenter-orchestrator`, su tabla no cubre todos los servicios ni los `*-migrate`, y los comentarios hablan de "20 colas".
 - Jaeger no forma parte del stack local; los servicios con `Nur.Tricenter.Observability` lo tienen como exportador, pero hay que levantarlo aparte.

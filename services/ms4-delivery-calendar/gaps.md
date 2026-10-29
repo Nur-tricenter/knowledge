@@ -2,7 +2,7 @@
 
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
-| ms4-gap-01 | El resultado de la entrega solo cierra el día si `PackageId` es el `packId` de MS4 | high | MS3, MS5 | resuelto (X-01, X-10; MS4#8 pendiente de merge); falta la evidencia en `DeliveryCompleted` |
+| ms4-gap-01 | El resultado de la entrega solo cierra el día si `PackageId` es el `packId` de MS4 | high | MS3, MS5 | resuelto (X-01, X-10; MS4#8); falta la evidencia en `DeliveryCompleted` |
 | ms4-gap-02 | Sin autorización por objeto (BOLA) | high | identity / MS1 | abierto (X-08) |
 | ms4-gap-03 | Job diario de catálogo con disparo manual | medium | — | abierto |
 | ms4-gap-04 | `InProduction` nunca se asigna | low | MS3 | abierto |
@@ -11,7 +11,7 @@
 ## Detalle
 
 ### ms4-gap-01 — El ciclo solo se cierra si `PackageId` es el `packId`
-> **Actualización 2026-10-29:** resuelto. MS4#3 y las colas (nur-tricenter-local#6) ya están mergeados. El `packId` viaja en `DeliveryAddedToRoute.DeliveryDayId` (kernel 1.4.0; MS3#6, MS5#5). `DeliveryAddedToRouteConsumer` busca el día por `DeliveryDayId`, luego por `PackageId` numérico y por último por paciente (el día más temprano en `ReadyForProduction`/`InProduction` sin entrega). MS4#6 y MS4#5 se reúnen en MS4#8, pendiente de merge. Sigue pendiente la evidencia (foto, firma) en `DeliveryCompleted`. El texto de abajo es el análisis original.
+> **Actualización 2026-10-29:** resuelto. MS4#3 y las colas (nur-tricenter-local#6) ya están mergeados. El `packId` viaja en `DeliveryAddedToRoute.DeliveryDayId` (kernel 1.4.0; MS3#6, MS5#5). `DeliveryAddedToRouteConsumer` busca el día por `DeliveryDayId`, luego por `PackageId` numérico y por último por paciente (el día más temprano en `ReadyForProduction`/`InProduction` sin entrega). MS4#6 y MS4#5 se reúnen en MS4#8 (mergeado). Sigue pendiente la evidencia (foto, firma) en `DeliveryCompleted`. El texto de abajo es el análisis original.
 
 - **Qué pasa:** MS5 ya publica `delivery-added-to-route`, `delivery-completed` y `delivery-failed`, y MS4 los consume para pasar el día a `Delivered`/`Failed` (cambio en MS4#3, pendiente de merge; colas en nur-tricenter-local#6, también pendiente). `DeliveryCompleted` y `DeliveryFailed` solo traen `DeliveryId`, así que MS4 depende de `DeliveryAddedToRoute.PackageId` para saber de qué día se trata.
 - **Impacto:** hoy MS3 manda su propio GUID como `PackageId` (ms3-gap-03), MS4 no lo reconoce y descarta el evento con un warning: los días siguen en `ReadyForProduction`. La evidencia (foto, firma) tampoco llega: el evento solo trae la hora de entrega.

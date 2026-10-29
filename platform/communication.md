@@ -117,13 +117,13 @@ Fuente: el código de cada repo a la fecha. La futura app visual la va a generar
 
 | Origen → destino | Estilo | Qué | Estado |
 |---|---|---|---|
-| MS3 → MS4 | REST + service account `ms3-service` | `POST /schedule`, `GET /calendars/active-tomorrow` | funcionando (probado en la plataforma); el `menu` de `active-tomorrow` está propuesto a MS4 |
+| MS3 → MS4 | REST + service account `ms3-service` | `POST /schedule`, `GET /calendars/active-tomorrow` | funcionando (probado en la plataforma); el `menu` de `active-tomorrow` ya lo devuelve MS4 (MS4#4) |
 | Frontend → MS4 | REST | direcciones, reprogramar, cancelar, consultar | MS4 lo expone; frontend sin repo |
 | MS4 → MS2 | REST + service account | `GET /api/catalog/v1/meal-plans/{id}` | funcionando |
-| MS5 → MS4 | Evento | `delivery-added-to-route`, `delivery-completed`, `delivery-failed` | MS4 los consume (MS4#3, mergeado); el día se identifica con `DeliveryDayId` (kernel 1.4.0, MS5#5), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 resueltos; MS4#8 pendiente de merge). `PATCH /delivery-result` queda como vía manual |
-| MS3 → MS5 | evento | `package-validated`: un paquete aprobado por calidad, con dirección, tracking y coordenadas | MS3 publica (copia local del contrato 1.2.0); MS5 lo consume en `main` y reenvía `DeliveryDayId` (kernel 1.4.0; X-10 resuelto) |
+| MS5 → MS4 | Evento | `delivery-added-to-route`, `delivery-completed`, `delivery-failed` | MS4 los consume (MS4#3, mergeado); el día se identifica con `DeliveryDayId` (kernel 1.4.0, MS5#5), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 resueltos; MS4#8). `PATCH /delivery-result` queda como vía manual |
+| MS3 → MS5 | evento | `package-validated`: un paquete aprobado por calidad, con dirección, tracking y coordenadas | MS3 publica (copia local del contrato, con el formato 1.4.0); MS5 lo consume en `main` y reenvía `DeliveryDayId` (kernel 1.4.0; X-10 resuelto) |
 | Operaciones / app repartidor → MS5 | REST | repartidores, rutas, iniciar, entregar, fallar | MS5 lo expone **sin autenticación** (X-03); sin clientes en la org |
-| MS5 → ClinicService | REST directo, sin token | `POST /api/v1/patients/contact-information` | contra un mock de Postman |
+| MS5 → ClinicService | REST directo, sin token | `POST /api/v1/patients/contact-information` | retirado en MS5#4: MS5 ya no llama a MS1; el nombre llega en `PackageValidated.PatientName` |
 | MS2 → todos | eventos | food/recipe/meal-plan (5 exchanges) | publicado; MS3 consume 3, MS4 consume 2 |
 | Identity → todos | eventos | user-published, user-updated | `user-published` publicado y consumido por MS2; `user-updated` nunca se emite (no hay endpoint que lo dispare) |
 | MS3, MS4 → Identity | REST vía gateway | `POST /api/identity-service/v1/auth/login` | funcionando (token de service account) |

@@ -3,10 +3,10 @@
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
 | ms5-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels (`Nur.Tricenter.Access`) | abierto (X-03) |
-| ms5-gap-02 | El cierre del día en MS4 depende de que el `PackageId` sea el `packId` de MS4 y de un consumidor de MS4 sin merge | high | MS4 | resuelto (X-01: `DeliveryDayId` en MS5#5; consumidor de MS4 mergeado; MS4#8 pendiente) |
-| ms5-gap-03 | En `main` no consume `package-validated`: los paquetes se cargan a mano | medium | MS5 (merge de `dev`) | resuelto en `dev`; PR abierto `dev` → `main` (MS5#3) |
+| ms5-gap-02 | El cierre del día en MS4 depende de que el `PackageId` sea el `packId` de MS4 y de un consumidor de MS4 sin merge | high | MS4 | resuelto (X-01: `DeliveryDayId` en MS5#5; consumidor de MS4 mergeado en MS4#3 y #8) |
+| ms5-gap-03 | En `main` no consume `package-validated`: los paquetes se cargan a mano | medium | MS5 (merge de `dev`) | resuelto (MS5#3, `dev` → `main`) |
 | ms5-gap-04 | 7 de los 10 eventos publicados no tienen consumidores | low | consumidores | parcial (X-02) |
-| ms5-gap-05 | ClinicService es un mock de Postman, se llama directo, sin token y sin resiliencia | medium | MS1 | abierto (X-04) |
+| ms5-gap-05 | ClinicService es un mock de Postman, se llama directo, sin token y sin resiliencia | medium | MS1 | resuelto (MS5#4 quitó la llamada; X-04 sigue abierto por el teléfono) |
 | ms5-gap-06 | Los paquetes van a la última ruta de hoy de cualquier repartidor, y se duplican al reenviar | medium | — | abierto |
 | ms5-gap-07 | Casos de uso del dominio sin endpoint: 3 eventos inalcanzables y el repartidor nunca cambia de estado | medium | — | abierto |
 | ms5-gap-08 | Cerrar la última entrega de una ruta no iniciada devuelve 422 y revierte todo | medium | — | abierto |
@@ -26,11 +26,15 @@
 - **Qué haría falta:** agregar los scopes `logistics.*` al kernel (p. ej. `logistics.courier:create`, `logistics.route:{create,start,read}`, `logistics.delivery:{create,edit}`), llamar a `AddSecurity()` y exigir un scope por endpoint. Después, autorización por objeto: que un repartidor solo vea y opere **su** ruta (`sub` → `CourierId`).
 
 ### ms5-gap-02 — El cierre del día en MS4 depende de un id que MS5 no controla
+> **Actualización 2026-10-29:** resuelto. MS5 guarda el `DeliveryDayId` que trae `package-validated` y lo reenvía en `DeliveryAddedToRoute` (MS5#5, kernel 1.4.0); MS4 lo consume (MS4#3, #8, mergeados). Sigue pendiente la evidencia en `DeliveryCompleted`. El texto de abajo es el análisis original.
+
 - **Qué pasa:** MS5 no llama a `PATCH /delivery-result` de MS4. La decisión tomada es por eventos: MS4 consume `delivery-added-to-route` (para vincular el `DeliveryId` de MS5 con su día), `delivery-completed` y `delivery-failed` por las colas `ms4.delivery-added-to-route`, `ms4.delivery-completed` y `ms4.delivery-failed` (topología mergeada en nur-tricenter-local#6; el código de MS4 está en el PR Nur-tricenter/ms4-delivery-schedule-management#3, **pendiente de merge**). MS4 interpreta `DeliveryAddedToRoute.PackageId` como su `packId` (`DeliveryDay.Id`, un entero); si no lo es, no vincula la entrega.
 - **Impacto:** en `main` el `PackageId` es texto libre que trae `POST /packages/deliveries`: el día de MS4 solo se cierra si quien carga el lote usa el `packId` de `active-tomorrow`. MS5 no lo valida. Además `DeliveryCompleted` no lleva evidencia (foto, firma): queda solo en MS5. Mientras el PR de MS4 no se mergee, los `DeliveryDay` siguen en `ReadyForProduction`.
 - **Qué haría falta:** que el `packId` de MS4 viaje de punta a punta (en el contrato de `package-validated` o validado en `POST /packages/deliveries`) y, si MS4 la necesita, la evidencia en `DeliveryCompleted`.
 
 ### ms5-gap-03 — En `main` los paquetes no llegan por evento
+> **Actualización 2026-10-29:** resuelto. `dev` pasó a `main` en [MS5#3](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/3), y el `packId` de MS4 ya viaja en el contrato (`DeliveryDayId`, kernel 1.4.0). El texto de abajo es el análisis original.
+
 - **Qué pasa:** en `main` el worker es solo productor ("PURE PRODUCER" en `RabbitMqExtensions.cs`), no hay inbox y el kernel es `Nur.Tricenter.Integration` 1.1.0. Los paquetes entran **solo** por `POST /packages/deliveries`.
 - **Resuelto en `dev`, pendiente de merge:** la rama `dev` (4 commits por delante de `main`; el cambio entró a `dev` con el PR #2 del repo, `feat/consume-package-validated`) agrega `PackageValidatedConsumer` en la cola `ms5.package-validated` (pipeline `TracingConsumer → IdempotentConsumer → PackageValidatedConsumer`, tabla `InboxMessages`, comando `AddValidatedPackageCommand`, kernel 1.2.0). Ahí cada paquete se agrega a la ruta de hoy más reciente sin consultar a MS1; sin coordenadas usa las de la sucursal; sin ruta de hoy el mensaje termina en la cola de error tras los reintentos.
 - **Lo que quedará después del merge:** `PackageValidated.PackageId` es el id del paquete de MS3, no el `packId` de MS4 (`ms3-gap-03`), así que el consumidor de MS4 no podrá vincular esas entregas (ms5-gap-02).
@@ -42,6 +46,8 @@
 - **Qué haría falta:** que los consumidores interesados (p. ej. MS3 con `route-completed`) pidan sus colas en `nur-tricenter-local`.
 
 ### ms5-gap-05 — Dependencia síncrona frágil con ClinicService
+> **Actualización 2026-10-29:** resuelto por [MS5#4](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/4): se quitaron `IClinicService`, `ClinicService`, `ClinicServiceOptions` y `ClinicService__BaseUrl`. El nombre del paciente llega en `PackageValidated.PatientName` (kernel 1.3.0) o en `patientName` de `POST /packages/deliveries`, y `GET route/today` lo lee de la base. El texto de abajo es el análisis original.
+
 - **Qué pasa:** `ClinicService__BaseUrl` apunta a un mock de Postman; la llamada sale directo (no por el gateway), sin token, sin reintentos ni timeout propio. Los errores del destino se devuelven como **422** (y un timeout como 500). `PhoneNumber` se recibe y no se usa.
 - **Impacto:** si el destino cae, no se pueden cargar paquetes **y el repartidor no puede ver su ruta del día**, aunque esté completa en la BD.
 - **Qué haría falta:** el MS1 real detrás del gateway con una service account; un resilience handler (reintentos + timeout); devolver 502/503 ante fallos del destino; y en `route/today` degradar al `patientId` en vez de fallar (o guardar el nombre del paciente al crear la entrega).

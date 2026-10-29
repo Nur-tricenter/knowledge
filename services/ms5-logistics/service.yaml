@@ -1,5 +1,5 @@
 # Ficha estructurada de MS5. Fuente: código de Nur-tricenter/ms5-logistics-and-delivery, rama main (4aabeb4, revisado 2026-10-28).
-# Lo que existe solo en la rama dev (consumidor de package-validated) se menciona en gaps, no aquí.
+# Nota 2026-10-29: el consumidor de package-validated ya está en main (MS5#3). events_consumed de abajo sigue sin reflejarlo; lo actualiza el owner de MS5.
 
 id: ms5
 name: Logística y entregas (Logistics and Delivery)
@@ -144,7 +144,7 @@ events_published:
     outbox: true
 
 # En main el worker es solo productor. PackageValidatedConsumer (cola ms5.package-validated) existe
-# solo en la rama dev, sin merge (ms5-gap-03).
+# antes del 2026-10-29 solo en la rama dev (ms5-gap-03); desde MS5#3 consume ms5.package-validated en main.
 events_consumed: []
 
 gaps:
@@ -152,17 +152,17 @@ gaps:
     summary: Sin autenticación ni scopes logistics.* en el kernel; todos los endpoints son anónimos, también vía gateway.
     severity: high
   - id: ms5-gap-02
-    summary: El cierre del día en MS4 depende de que el PackageId cargado sea el packId de MS4 (MS5 no lo valida) y del consumidor de MS4 aún sin merge; sin evidencia en los eventos.
+    summary: Resuelto en lo principal. MS5 reenvía DeliveryDayId (MS5#5, kernel 1.4.0) y MS4 consume los eventos (MS4#3, #8). Falta la evidencia (foto, firma) en DeliveryCompleted.
     severity: high
     blocked_by: ms4
   - id: ms5-gap-03
-    summary: En main no consume package-validated (el consumidor está solo en dev, sin merge); los paquetes se cargan a mano por POST /packages/deliveries.
+    summary: Resuelto. El consumidor de package-validated pasó de dev a main (MS5#3); POST /packages/deliveries queda como carga manual.
     severity: medium
   - id: ms5-gap-04
     summary: De los 10 exchanges solo delivery-added-to-route, delivery-completed y delivery-failed tienen cola de consumidor (ms4.*); los otros 7 llegan solo al sink nurtricenter.default.
     severity: low
   - id: ms5-gap-05
-    summary: ClinicService es un mock de Postman llamado directo, sin token ni resiliencia; si cae, el repartidor no ve su ruta.
+    summary: Resuelto en MS5#4. MS5 ya no llama al ClinicService; el nombre del paciente llega en package-validated y se guarda localmente.
     severity: medium
     blocked_by: ms1
   - id: ms5-gap-06

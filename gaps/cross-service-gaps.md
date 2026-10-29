@@ -1,26 +1,26 @@
 # Gaps transversales
 
 Problemas que involucran **a más de un servicio**. Los gaps internos de cada MS van en `services/<ms>/gaps.md`.
-Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07, X-10 y X-11 revisados el 2026-10-24 con la ficha de MS5. **Revisión transversal del 2026-10-28** contra el código de todos los repos (`main` de cada uno; MS1 en su repo externo): actualiza X-02, X-04, X-06, X-07 y X-10 y agrega X-12 a X-14. Al resolver uno, márcalo como cerrado e indica el PR.
+Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07, X-10 y X-11 revisados el 2026-10-24 con la ficha de MS5. **Revisión transversal del 2026-10-28** contra el código de todos los repos (`main` de cada uno; MS1 en su repo externo): actualiza X-02, X-04, X-06, X-07 y X-10 y agrega X-12 a X-14. **Actualización del 2026-10-29** con los PR mergeados el 28 y 29: cierra X-01, X-10, X-12 y X-16; actualiza X-04, X-06 y X-07. Al resolver uno, márcalo como cerrado e indica el PR.
 
 | Id | Gap | Severidad | Servicios | Estado |
 |---|---|---|---|---|
-| X-01 | El ciclo de entrega solo cierra si `PackageId` es el `packId` de MS4 | high | MS3, MS5, MS4 | resuelto (kernel#5, MS3#6, MS5#5, MS4#6; MS4#8 pendiente de merge); falta la evidencia en `DeliveryCompleted` |
+| X-01 | El ciclo de entrega solo cierra si `PackageId` es el `packId` de MS4 | high | MS3, MS5, MS4 | resuelto (kernel#5, MS3#6, MS5#5, MS4#6 y #8); falta la evidencia en `DeliveryCompleted` |
 | X-02 | De los 10 exchanges de logística, solo los 3 de entrega tienen consumidor (MS4) | medium | MS5, consumidores | parcial |
 | X-03 | MS5 no valida JWT ni tiene scopes en el kernel | high | MS5, kernels | abierto |
-| X-04 | MS1 tiene repo, pero fuera de la org y sin integrar (MS3 usa pacientes simulados, MS5 un mock) | high | MS1, MS3, MS5 | abierto |
+| X-04 | MS1 tiene repo, pero fuera de la org y sin integrar (MS3 usa pacientes simulados; MS5 dejó de llamar a MS1 en MS5#4) | high | MS1, MS3, MS5 | abierto (parcial: MS5) |
 | X-05 | La ruta de identity en el gateway está documentada de dos formas | low | identity, kernels | abierto |
 | X-06 | Hay colas declaradas sin consumidor | low | todos | abierto |
 | X-07 | Versiones mezcladas de los kernels | medium | todos | abierto |
 | X-08 | Sin autorización por objeto (no existe mapeo `sub` → `PatientId`) | high | identity, MS1, MS4 | abierto |
 | X-09 | Tabla maestra de endpoints desactualizada o fuera de los repos | low | todos | abierto |
-| X-10 | Paquetes MS3 → MS5: el consumidor de `package-validated` está solo en la rama `dev` de MS5, y falta el `packId` de MS4 en el evento | medium | MS3, MS4, MS5 | resuelto (consumidor en `main` de MS5; `DeliveryDayId` en kernel 1.4.0: kernel#5, MS3#6, MS5#5; MS4#5 queda como respaldo por paciente; MS4#8 pendiente de merge) |
+| X-10 | Paquetes MS3 → MS5: el consumidor de `package-validated` está solo en la rama `dev` de MS5, y falta el `packId` de MS4 en el evento | medium | MS3, MS4, MS5 | resuelto (consumidor en `main` de MS5; `DeliveryDayId` en kernel 1.4.0: kernel#5, MS3#6, MS5#5; MS4#5 queda como respaldo por paciente; MS4#8 los reúne) |
 | X-11 | MS3 no valida JWT ni tiene scopes en el kernel | high | MS3, kernels | abierto |
-| X-12 | El stack local no levanta: identity fuera del compose e include/builds de MS1 inexistentes | high | local, identity, MS1, todos | PR abierto (nur-tricenter-local#7) |
+| X-12 | El stack local no levanta: identity fuera del compose e include/builds de MS1 inexistentes | high | local, identity, MS1, todos | resuelto (nur-tricenter-local#7) |
 | X-13 | MS1 no es integrable: SQL Server propio, sin Consul, sin JWT, contrato de evento fuera del kernel | high | MS1, MS3, MS4, MS5 | abierto |
 | X-14 | Escalada de privilegios: `POST /users` de identity acepta `platform:*` | high | identity, todos | abierto |
 | X-15 | Sin backfill: los consumidores no conocen lo publicado antes de que existiera su cola | medium | MS2, MS3, MS4 | abierto |
-| X-16 | MS5 agrega el paquete a la ruta de **hoy**, pero MS3 produce para la entrega de **mañana** | medium | MS3, MS5 | abierto |
+| X-16 | MS5 agrega el paquete a la ruta de **hoy**, pero MS3 produce para la entrega de **mañana** | medium | MS3, MS5 | resuelto (kernel#4, MS3#5, MS5#4) |
 | X-17 | Faltan endpoints de consulta para seguir un caso de punta a punta | low | MS3, MS4, MS5 | abierto |
 
 ## Detalle
@@ -28,7 +28,7 @@ Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04,
 ### X-01 — El ciclo de entrega no se cierra
 > **Actualización 2026-10-28:** se eligió la opción (b). MS5 ya publica `delivery-added-to-route`, `delivery-completed` y `delivery-failed`, y MS4 los consume ([MS4#3](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/3) y las colas `ms4.delivery-*` en [nur-tricenter-local#6](https://github.com/Nur-tricenter/nur-tricenter-local/pull/6), ya mergeados). MS3 manda su propio GUID como `PackageId` (ms3-gap-03).
 >
-> **Actualización 2026-10-29 — resuelto.** El `packId` de MS4 ahora viaja en `PackageValidated.DeliveryDayId` (kernel 1.4.0, [kernel#5](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/5)): MS3 lo envía ([MS3#6](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/6)), MS5 lo guarda y lo reenvía en `DeliveryAddedToRoute` ([MS5#5](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/5)) y MS4 lo usa primero, luego un `PackageId` numérico y por último el paciente ([MS4#6](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/6) y [MS4#5](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/5), reunidos en [MS4#8](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/8), pendiente de merge). **Sigue pendiente** que `DeliveryCompleted` lleve evidencia (foto, firma). El texto de abajo es el análisis original.
+> **Actualización 2026-10-29 — resuelto.** El `packId` de MS4 ahora viaja en `PackageValidated.DeliveryDayId` (kernel 1.4.0, [kernel#5](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/5)): MS3 lo envía ([MS3#6](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/6)), MS5 lo guarda y lo reenvía en `DeliveryAddedToRoute` ([MS5#5](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/5)) y MS4 lo usa primero, luego un `PackageId` numérico y por último el paciente ([MS4#6](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/6) y [MS4#5](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/5), reunidos en [MS4#8](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/8), mergeado el 2026-10-29). **Sigue pendiente** que `DeliveryCompleted` lleve evidencia (foto, firma). El texto de abajo es el análisis original.
 
 MS4 expone `PATCH /api/v1/calendars/days/{dayId}/delivery-result` (scope `deliveryCalendar.deliveryResult:edit`), que es el **único** camino para que un día pase a `Delivered`/`Failed`. MS5 registra entregas y fallos (`/deliver`, `/fail`) y publica `delivery-completed`/`delivery-failed`, pero no llama a MS4 ni nadie consume esos eventos. **Impacto:** todos los días quedan en `ReadyForProduction` para siempre.
 
@@ -53,26 +53,29 @@ MS5 solo llama a `AddAuthorization()`, sin `AddSecurity()` del kernel, y no exis
 ### X-04 — MS1 sin integrar
 > **2026-10-28:** MS1 **sí tiene código**, en un repo fuera de la org: `Juandcode/ClinicaNutricionalMicroservicio1` (lo clona `setup-project` como `ms1-clinica-nutricional`). No expone `POST /api/v1/patients/contact-information` ni guarda teléfono ni dirección, así que no cumple el contrato que espera MS5. Por qué no se puede enchufar todavía: X-13. Ficha: [ms1-clinic](../services/ms1-clinic/README.md) (`draft`).
 
+> **2026-10-29:** MS5 ya no llama al ClinicService ([MS5#4](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/4)): quitó `IClinicService` y la URL del mock. El nombre del paciente viaja en `PackageValidated.PatientName` (kernel 1.3.0) y MS5 lo guarda en el paquete; `POST /packages/deliveries` lo recibe como `patientName`. Queda pendiente el teléfono y que MS3 deje de usar pacientes simulados.
+
 Texto original: los demás lo referencian (hay colas `ms1.*`), pero el código no está en la org. MS3 ya tiene repo; mientras MS1 no exista, MS3 trabaja con 3 pacientes simulados. MS5 llama a un "ClinicService", que es MS1 (confirmado por el owner de MS5), contra un mock de Postman: `POST /api/v1/patients/contact-information` con un array de `patientId` (texto), respuesta `[{ patientId, phoneNumber, fullName }]`, **directo** (sin gateway) y sin token. Ese contrato lo definió MS5 y no está en ningún kernel; el MS1 real tendría que respetarlo o MS5 adaptarse.
 
 ### X-05 — Ruta de identity
 El gateway arma el prefijo con el nombre en Consul (`identity-service`) → `/api/identity-service/**`, que es lo que usa MS4. El README de identity y el `Base` de `IdentityPermission` en el kernel dicen `/api/identity`. Además, la tabla `IdentityRoutes` del kernel pide `identity.user:create` para `POST /users` (el servicio exige `:manage`), lista un `GET /users` que no existe y comenta que crear usuarios es anónimo.
 
 ### X-06 — Colas sin consumidor
-Por ejemplo `ms4.recipe-published`, `ms4.food-*`, `ms4.user-*`, `ms2.user-updated`, todas las `ms1.*` (MS1 no consume nada) y las `ms5.*` (en `main` MS5 no consume nada; en `dev` consume `ms5.package-validated`). Se acumulan mensajes sin que nadie los lea. O se consumen, o se quitan de la topología. Al revés también pasa: identity declara en runtime la cola durable `identity.default` (y MS1 `gestion-clinica-nutricional.default`), que no figuran en `rabbitmq-definitions.json`.
+Por ejemplo `ms4.recipe-published`, `ms4.food-*`, `ms4.user-*`, `ms2.user-updated`, todas las `ms1.*` (MS1 no consume nada) y las `ms5.*` salvo `ms5.package-validated`, que MS5 consume en `main` desde el 2026-10-29 (MS5#3). Se acumulan mensajes sin que nadie los lea. O se consumen, o se quitan de la topología. Al revés también pasa: identity declara en runtime la cola durable `identity.default` (y MS1 `gestion-clinica-nutricional.default`), que no figuran en `rabbitmq-definitions.json`.
 
 ### X-07 — Kernels en versiones distintas
-> **2026-10-28:** MS2 e identity ya están en 1.1.0, igual que MS4. Lo que queda:
+> **2026-10-29:** el kernel avanzó a 1.4.0 y cada servicio quedó en una versión distinta:
 
 | Servicio | Kernels |
 |---|---|
-| MS2, identity, MS4 | `Access`, `Security`, `Integration` 1.1.0 (MS2 e identity también `Observability`) |
-| MS5 | solo `Integration` 1.1.0 en `main` (1.2.0 en `dev`) |
-| MS3 | ninguno: copias locales de los contratos (`PackageValidated`, eventos del catálogo) |
+| MS4 | `Access`, `Security`, `Integration` 1.4.0 (MS4#6, restaurado en MS4#8) |
+| MS5 | solo `Integration` 1.4.0 en `main` (MS5#5) |
+| MS2, identity | `Access`, `Security`, `Integration`, `Observability` 1.2.0 (MS2#3, identity#2); `Joseco.Outbox.EFCore` y `Joseco.Communication.External.RabbitMQ` volvieron a 1.1.0 porque la 1.2.0 no está disponible (MS2#4, identity#3) |
+| MS3 | ninguno: copias locales de los contratos (`PackageValidated`, eventos del catálogo), con el formato de la 1.4.0 (MS3#5, #6) |
 | MS1 | ninguno: contrato local `PacientePublished` (Joseco `IntegrationMessage`) |
 | Gateway | ninguno |
 
-La 1.2.0 (agrega `PackageValidated`) está en el repo de kernels. Los contratos copiados pueden divergir del publisher sin que nada falle.
+Historial de `Integration`: 1.2.0 agregó `PackageValidated`; 1.3.0, `DeliveryDate` y `PatientName` (kernel#4); 1.4.0, `DeliveryDayId` en `PackageValidated` y `DeliveryAddedToRoute` (kernel#5). Los cambios son aditivos. Los contratos copiados pueden divergir del publisher sin que nada falle.
 
 ### X-08 — Autorización por objeto
 Los scopes dicen *qué tipo* de cliente llama, no *de quién* es el recurso. Hace falta que el token (o una consulta a MS1) permita mapear `sub` → `PatientId`.
@@ -85,23 +88,23 @@ MS5 expone `POST /api/v1/packages/deliveries` (array de `{ patientId, packageDet
 
 **Impacto:** en la plataforma ningún paquete llega solo a una ruta; el flujo de punta a punta se corta entre la producción y el reparto.
 
-**Decisión (owner de MS5, 2026-10-24):** MS3 publica un **evento** con los paquetes producidos y MS5 lo consume; `POST /packages/deliveries` queda como entrada manual. **Hecho por MS3 (2026-10-24):** el contrato `PackageValidated` (kernel `main`, versión 1.2.0; MS3 todavía usa una copia local equivalente), el exchange `package-validated` y la cola `ms5.package-validated` (rama `feat/ms3-contracting` de `nur-tricenter-local`) y el publisher vía outbox. Ya figura en `contracts/events.yaml`. **Hecho por MS5 (2026-10-27), solo en la rama `dev`:** consumidor idempotente de `ms5.package-validated` (`PackageValidatedConsumer`, inbox `InboxMessages`, kernel 1.2.0). Agrega cada paquete a la ruta de hoy, y si llega sin coordenadas usa las de la sucursal. **Al 2026-10-28 no está en `main`** (MS5 `main` es productor puro), que es lo que levanta el stack local: PR [MS5#3](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/3) (`dev` → `main`). **Pendiente:** que `PackageId` sea el `packId` de MS4 (ver `ms3-gap-03`: hoy es el id del paquete de MS3).
+**Decisión (owner de MS5, 2026-10-24):** MS3 publica un **evento** con los paquetes producidos y MS5 lo consume; `POST /packages/deliveries` queda como entrada manual. **Hecho por MS3 (2026-10-24):** el contrato `PackageValidated` (kernel `main`, versión 1.2.0; MS3 todavía usa una copia local equivalente), el exchange `package-validated` y la cola `ms5.package-validated` (rama `feat/ms3-contracting` de `nur-tricenter-local`) y el publisher vía outbox. Ya figura en `contracts/events.yaml`. **Hecho por MS5 (2026-10-27), solo en la rama `dev`:** consumidor idempotente de `ms5.package-validated` (`PackageValidatedConsumer`, inbox `InboxMessages`, kernel 1.2.0). Agrega cada paquete a la ruta de hoy, y si llega sin coordenadas usa las de la sucursal. Pasó a `main`, que es lo que levanta el stack local, en [MS5#3](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/3) (`dev` → `main`, mergeado el 2026-10-29). Al aplicarlo hay que correr la migración `AddInboxMessages` en la base de MS5 (MS5 no migra al arrancar); lo mismo vale para `PatientName` (MS5#4) y `DeliveryDayId` (MS5#5). *(Texto original; lo que quedaba pendiente, que el `packId` de MS4 llegara a MS5, se resolvió con `DeliveryDayId`, ver abajo.)*
 
 > **2026-10-28 — validado de punta a punta en el stack local.** Con MS5 `dev`, MS4 cierra el día gracias a un rodeo: [MS4#5](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/5) enlaza la entrega con el día **por paciente** cuando `PackageId` no es un `packId`. 
 
-> **2026-10-29 — resuelto de fondo.** En vez de reutilizar `PackageId`, el kernel 1.4.0 agregó `DeliveryDayId` (`int?`) a `PackageValidated` y a `DeliveryAddedToRoute`: MS3 lo toma de `active-tomorrow` (MS3#6), MS5 lo guarda por entrega y lo reenvía (MS5#5) y MS4 lo usa primero (MS4#6, reunido con el respaldo por paciente en MS4#8, pendiente de merge). El consumidor de `package-validated` ya está en `main` de MS5. Es `null` cuando MS3 no encuentra calendario; en ese caso MS4 recurre al `PackageId` numérico o al paciente. Sigue pendiente alinear tipos: MS5 usa `string` para `patientId`, MS4 usa `Guid`.
+> **2026-10-29 — resuelto de fondo.** En vez de reutilizar `PackageId`, el kernel 1.4.0 agregó `DeliveryDayId` (`int?`) a `PackageValidated` y a `DeliveryAddedToRoute`: MS3 lo toma de `active-tomorrow` (MS3#6), MS5 lo guarda por entrega y lo reenvía (MS5#5) y MS4 lo usa primero (MS4#6, reunido con el respaldo por paciente en MS4#8, mergeado). Para que MS4 no enlace la entrega con el día de otro contrato, MS3 elige el calendario del plan del paquete ([MS3#7](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/7)). El consumidor de `package-validated` ya está en `main` de MS5. Es `null` cuando MS3 no encuentra calendario; en ese caso MS4 recurre al `PackageId` numérico o al paciente. Sigue pendiente alinear tipos: MS5 usa `string` para `patientId`, MS4 usa `Guid`.
 
 ### X-11 — MS3 sin autenticación
 Ningún endpoint de MS3 usa `RequireAuthorization` y no tiene permisos en `Nur.Tricenter.Access`. Cualquiera puede, a través del gateway, contratar, cobrar, cancelar y validar paquetes. Es el mismo problema de MS5 (X-03), con más riesgo porque MS3 mueve dinero. Detalle y qué haría falta: `ms3-gap-01`.
 
 ### X-12 — El stack local no levanta
-`nur-tricenter-local` (`main` 4a1d700):
+Estado original en `nur-tricenter-local` (`main` 4a1d700, antes de #7):
 - `compose/docker-compose.yml` perdió el include de `../../nur-tricenter-identity/identity.compose.yml` (el commit `acce166`, que integró MS1, reemplazó esa línea). El encabezado del archivo todavía lo lista. Sin identity no hay login: `start-stack` falla al crear las service accounts, y MS3 y MS4 no obtienen token.
 - Incluye `../../ms1-clinica-nutricional/ms1.compose.yml`, que no existe en el repo de MS1, y `start-stack.*` compila `src/ClinicaNutricional.Api` y `src/ClinicaNutricional.WorkerService`, que tampoco existen (los proyectos reales están en la raíz del repo).
 - `docker compose up` falla por el include faltante. `start-stack.sh` (`set -e`) corta en el primer build de MS1; `start-stack.ps1` no revisa esos builds y falla recién en el compose.
 
 **Impacto:** nadie puede levantar la plataforma completa desde `main`.
-**Qué haría falta:** volver a incluir `identity.compose.yml` y quitar MS1 del compose y de los scripts hasta que tenga un fragmento de plataforma (X-13). **Hecho en [nur-tricenter-local#7](https://github.com/Nur-tricenter/nur-tricenter-local/pull/7)** (pendiente de merge), que además crea las BD que falten en un volumen viejo, revisa todos los builds y agrega `scripts/e2e-smoke.py`.
+**Qué haría falta:** volver a incluir `identity.compose.yml` y quitar MS1 del compose y de los scripts hasta que tenga un fragmento de plataforma (X-13). **Resuelto en [nur-tricenter-local#7](https://github.com/Nur-tricenter/nur-tricenter-local/pull/7)** (mergeado el 2026-10-28): vuelve el include de identity, MS1 queda comentado en el compose, y el PR además crea las BD que falten en un volumen viejo, revisa todos los builds y agrega `scripts/e2e-smoke.py`.
 
 ### X-13 — MS1 no es integrable todavía
 Para entrar al stack, MS1 necesita lo que ya tienen los demás y hoy no tiene:
@@ -109,7 +112,7 @@ Para entrar al stack, MS1 necesita lo que ya tienen los demás y hoy no tiene:
 - **Descubrimiento:** no se registra en Consul, así que el gateway no lo rutea.
 - **Seguridad:** no valida JWT; todos sus endpoints son anónimos. No hay scopes de MS1 en el kernel.
 - **Contratos:** publica `PacientePublished` en `paciente-published` con un contrato local (no usa `Nur.Tricenter.Integration`). Ese exchange no está en la topología, y el evento tiene los campos cruzados y el `PacienteId` vacío (detalle en la [ficha](../services/ms1-clinic/gaps.md)).
-- **Lo que esperan los demás:** MS5 llama a `POST /api/v1/patients/contact-information` (hoy contra un mock) y MS4 necesita mapear `sub` → `PatientId` (X-08). MS1 no expone ni guarda ninguna de las dos cosas.
+- **Lo que esperan los demás:** MS5 llamaba a `POST /api/v1/patients/contact-information` (contra un mock; dejó de llamarlo en MS5#4, ver X-04) y MS4 necesita mapear `sub` → `PatientId` (X-08). MS1 no expone ni guarda ninguna de las dos cosas.
 - **Compose:** solo tiene un `docker-compose.yml` standalone con una imagen publicada; no hay `ms1.compose.yml` (X-12).
 
 ### X-14 — Escalada de privilegios en identity
@@ -123,6 +126,8 @@ MS3 (`CatalogPlans`) y MS4 (`PlanCatalog`) proyectan los planes de MS2 desde `me
 **Qué haría falta:** un endpoint de operaciones en MS2 que republique sus agregados (backfill), o que MS3 consulte a MS2 por HTTP cuando no tiene el plan proyectado.
 
 ### X-16 — Fecha de la ruta de MS5
+> **2026-10-29 — resuelto.** `PackageValidated` lleva `DeliveryDate` (kernel 1.3.0, [kernel#4](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/4)): MS3 la manda con la fecha de producción de la orden ([MS3#5](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/5)) y MS5 agrega el paquete a la última ruta **de esa fecha** ([MS5#4](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/4)); sin fecha usa `ReleasedAt + 1 día`. Si no hay ruta para esa fecha responde `Route.NoRouteForDate`. El texto de abajo es el análisis original.
+
 MS3 produce el día D-1 para la entrega del día D (`active-tomorrow`). El consumidor de `package-validated` de MS5 agrega el paquete a la ruta **de hoy** (D-1), y si no existe, el mensaje termina en la cola de error. En la demo funciona porque todo ocurre el mismo día.
 
 **Qué haría falta:** que `PackageValidated` lleve la fecha de entrega (o el `packId`, de donde sale la fecha) y que MS5 busque la ruta de esa fecha.

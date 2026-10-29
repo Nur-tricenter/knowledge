@@ -8,13 +8,13 @@
 | ms3-gap-04 | Errores de dominio devuelven 500 y la validación del lote es parcial | medium | — | abierto |
 | ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales | medium | kernels, `NUGET_TOKEN` | abierto |
 | ms3-gap-06 | Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario | medium | MS4 | abierto |
-| ms3-gap-07 | La orden de producción real depende del campo `menu` que MS4 aún no devuelve | medium | MS4 | abierto (rama de MS4 sin PR) |
+| ms3-gap-07 | La orden de producción real dependía del campo `menu`, que MS4 no devolvía | medium | MS4 | resuelto (MS4#4 devuelve `menu`; MS3 arma la orden desde ahí) |
 | ms3-gap-08 | `MealPlanPublished` no trae precio: el plan proyectado cuesta 0 | low | MS2 | abierto |
 | ms3-gap-09 | Nadie avisa a MS4 que un día está `InProduction` | low | MS4 | abierto (ms4-gap-04) |
 | ms3-gap-10 | Mensajes no persistentes y colas sin consumidor | low | Joseco, todos | abierto (X-06) |
 | ms3-gap-11 | El outbox no es atómico: el cambio y su fila se guardan en dos `CommitAsync` | medium | — | abierto |
-| ms3-gap-12 | Re-validar una orden da 500 por los paquetes ya validados | high | — | PR abierto (MS3#3) |
-| ms3-gap-13 | El seed corre en la plataforma y crea una orden falsa para mañana | high | — | PR abierto (MS3#4) |
+| ms3-gap-12 | Re-validar una orden da 500 por los paquetes ya validados | high | — | resuelto (MS3#3) |
+| ms3-gap-13 | El seed corre en la plataforma y crea una orden falsa para mañana | high | — | resuelto (MS3#4) |
 | ms3-gap-14 | `daily-order` se congela al primer pedido de la fecha | medium | MS4 | abierto |
 | ms3-gap-15 | Un paciente puede tener varios contratos activos a la vez | low | MS4 | abierto (decisión de negocio) |
 | ms3-gap-16 | Un `GET` con `Content-Type: application/json` y sin cuerpo responde 400 | low | — | abierto |
@@ -32,7 +32,7 @@
 - **Qué haría falta:** MS1 con un evento de paciente publicado (para una copia local, como los planes) o un endpoint. MS5 ya espera un contrato propio de MS1 (X-04); conviene acordar uno solo.
 
 ### ms3-gap-03 — El evento no calza con MS5 ni con MS4
-> **Actualización 2026-10-29:** el `packId` de MS4 ya viaja en `PackageValidated.DeliveryDayId` (kernel 1.4.0, [kernel#5](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/5)). MS3 lo envía ([MS3#6](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/6)), MS5 lo reenvía ([MS5#5](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/5)) y MS4 lo usa para enlazar la entrega (MS4#6, reunido en MS4#8, pendiente de merge). Es `null` si no hay calendario que coincida. Siguen abiertos el tipo de `PatientId` (`string` en MS5, `Guid` en MS3/MS4) y las coordenadas nulas. El texto de abajo es el análisis original.
+> **Actualización 2026-10-29:** el `packId` de MS4 ya viaja en `PackageValidated.DeliveryDayId` (kernel 1.4.0, [kernel#5](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/5)). MS3 lo envía ([MS3#6](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/6)), MS5 lo reenvía ([MS5#5](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/5)) y MS4 lo usa para enlazar la entrega (MS4#6, reunido en MS4#8, mergeado). Es `null` si no hay calendario que coincida. Siguen abiertos el tipo de `PatientId` (`string` en MS5, `Guid` en MS3/MS4) y las coordenadas nulas. El texto de abajo es el análisis original.
 
 - **Qué pasa:** el owner de MS5 decidió que el `packageId` del evento sea el `packId` de MS4, lo que además cerraría X-01 (MS5 podría informar el resultado de cada día). `PackageValidated.PackageId` es el id del paquete de MS3, un GUID propio. MS5 usa `string` para `patientId` y MS3/MS4 usan `Guid`. `AddressCoordinates` no admite nulos en MS5, y el evento los manda `null` si no hay calendario que coincida.
 - **Impacto:** MS5 ya consume la cola (rama `dev`), pero no puede correlacionar la entrega con el día de MS4. MS4 consume los eventos de entrega de MS5 (PR #3 de MS4, abierto) y espera que su `PackageId` sea el `packId` entero; con el GUID de MS3 no puede cerrar el día (`Delivered`/`Failed`).
@@ -44,6 +44,8 @@
 - **Qué haría falta:** mapear esas excepciones a 409/422 y que `validate` reporte el fallo de cada paquete en `results[]`, como ya hace con los errores de `Result`.
 
 ### ms3-gap-05 — Contratos como copias locales
+> **Actualización 2026-10-29:** el kernel ya está en 1.4.0 y MS5 (en `main`) y MS4 lo referencian. MS3 sigue con copias locales, pero la de `PackageValidated` ya sigue el formato 1.4.0 (`PatientName`, `DeliveryDate`, `DeliveryDayId`; MS3#5, #6). Lo que falta es referenciar el paquete 1.4.0. El texto de abajo es el análisis original.
+
 - **Qué pasa:** el feed de GitHub Packages exige `NUGET_TOKEN`, que MS3 aún no usa. `PackageValidated` ya está en `main` del kernel (PR #3, versión 1.2.0), y MS5 lo referencia en su rama `dev`. MS3 no referencia ningún paquete `Nur.Tricenter.*`: usa copias locales equivalentes (mismos campos y `EventType`, namespace `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.*`) de `PackageValidated`, `MealPlanPublished`, `RecipePublished` y `RecipeUpdated`.
 - **Impacto:** si el publicador cambia un campo, las copias no se enteran (el JSON desconocido se ignora sin error). La regla del equipo es no tener copias locales.
 - **Qué haría falta:** que MS3 referencie `Nur.Tricenter.Integration` 1.2.0. El formato en el cable es el mismo, así que el cambio es solo de referencias.
@@ -54,9 +56,9 @@
 - **Qué haría falta:** validar la duración antes de cobrar (o contra la proyección de MS2), o una acción compensatoria (cancelar/reembolsar) y una alerta sobre filas `Rejected`.
 
 ### ms3-gap-07 — `menu` en `active-tomorrow`
-- **Qué pasa:** MS3 arma la orden con el `menu` de cada entrega. `main` de MS4 no lo devuelve (`ActiveTomorrowLineDto` no tiene `Menu`); el cambio está en la rama `feat/active-tomorrow-menu` de MS4, sin PR abierto (revisado 2026-10-28).
+- **Qué pasa:** MS3 arma la orden con el `menu` de cada entrega. Resuelto: `main` de MS4 ya devuelve `menu` en `active-tomorrow` (MS4#4, mergeado el 2026-10-28). Antes `ActiveTomorrowLineDto` no tenía `Menu` y el cambio estaba en la rama `feat/active-tomorrow-menu`, sin PR (revisado 2026-10-28).
 - **Impacto:** sin ese cambio, la orden diaria solo funciona con los 3 planes simulados; con un plan real responde 422 `NO_RECIPES` (antes era un 500).
-- **Qué haría falta:** abrir el PR de esa rama en MS4, revisarlo y mergearlo (aditivo: no rompe a los demás consumidores).
+- **Qué haría falta:** nada: el cambio se mergeó en MS4#4 (era aditivo, no rompe a los demás consumidores).
 
 ### ms3-gap-08 — Precio del plan
 `MealPlanPublished` no trae el precio. El plan proyectado se expone con costo 0; nada lo usa hoy porque el monto llega en el pago. Si MS3 tuviera que validarlo, MS2 debe agregarlo al contrato.

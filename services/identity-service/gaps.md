@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | identity-gap-01 | `POST /users` acepta `platform:*`: escalada a administrador | high | — | abierto |
 | identity-gap-02 | Sin ciclo de vida de cuentas (listar, scopes, desactivar, contraseña, revocar); `user-updated` está muerto | medium | — | abierto |
-| identity-gap-03 | Identity no está en el compose local: el stack no tiene emisor de tokens | high | nur-tricenter-local | abierto (X-12) |
+| identity-gap-03 | Identity no está en el compose local: el stack no tiene emisor de tokens | high | nur-tricenter-local | resuelto (X-12, nur-tricenter-local#7) |
 | identity-gap-04 | Sin relación `sub` → `PatientId` | high | MS1 | abierto (X-08) |
 | identity-gap-05 | Respuestas incompletas: `email` vacío en `/me` y en el 201; `Location` incorrecto | low | — | abierto |
 | identity-gap-06 | `IdentityRoutes` del kernel no coincide con el servicio | low | kernels | abierto (X-05) |
@@ -26,6 +26,8 @@
 - **Qué haría falta:** endpoints de administración que modifiquen `UserScopes` a través del agregado (para que se publique `UserChanged`), y tokens más cortos o refresh tokens.
 
 ### identity-gap-03 — El stack local no levanta identity
+> **Actualización 2026-10-28:** resuelto en [nur-tricenter-local#7](https://github.com/Nur-tricenter/nur-tricenter-local/pull/7), que restauró el `include` de `identity.compose.yml`. El texto de abajo es el análisis original.
+
 - **Qué pasa:** el commit `acce166` de `nur-tricenter-local` (integración de MS1) reescribió `compose/docker-compose.yml` y quitó el `include` de `../../nur-tricenter-identity/identity.compose.yml`; además incluye un `ms1.compose.yml` que no existe. `start-stack.*` todavía compila identity y espera poder hacer login del admin.
 - **Impacto:** sin identity no hay tokens: MS2 y MS4 responden 401 a todo, MS3/MS4 no obtienen sus service accounts y `start-stack` aborta.
 - **Qué haría falta:** restaurar el `include` en `nur-tricenter-local` (gap transversal X-12).

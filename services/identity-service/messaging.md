@@ -6,7 +6,7 @@
 | `user-published` | `UserPublished` | `User.Published` | Se crea una cuenta: `POST /api/v1/users` o el seed del admin en el WorkerService | sí |
 | `user-updated` | `UserChanged` | `User.Changed` | `User.GrantScope/RevokeScope/Deactivate/Activate`. **Ningún endpoint ni proceso llama a esos métodos, así que hoy nunca se publica** | sí (cableado) |
 
-Contratos: `Nur.Tricenter.Integration.Messages.Identity` (kernel 1.1.0).
+Contratos: `Nur.Tricenter.Integration.Messages.Identity` (kernel 1.2.0).
 - `UserPublished`: `UserId, UserName, Email, IsAdministrator, Scopes` (scopes **expandidos**: para el admin, los 27 concretos). Nunca lleva hash ni contraseña.
 - `UserChanged`: `UserId, UserName, Email, Scopes, IsActive, ChangeKind` (`scopes` | `deactivated` | `activated` | `profile`).
 - `Source = "identity"`; `CorrelationId` = trace id de la request que creó la cuenta (`OutboxTracingService`).

@@ -121,7 +121,7 @@ events_consumed:
     exchange: delivery-added-to-route
     contract: DeliveryAddedToRoute
     handler: DeliveryAddedToRouteConsumer
-    effect: Guarda en DeliveryRouteLinks la relación DeliveryId de MS5 → día de MS4 (PackageId = packId = DeliveryDay.Id). Un PackageId no numérico se ignora.
+    effect: Guarda en DeliveryRouteLinks la relación DeliveryId de MS5 → día de MS4 (DeliveryDayId; si falta, PackageId numérico = DeliveryDay.Id; si no, el día más temprano del paciente en producción sin entrega). Sin coincidencia se ignora.
     idempotent: true
   - queue: ms4.delivery-completed
     exchange: delivery-completed
@@ -138,7 +138,7 @@ events_consumed:
 
 gaps:
   - id: ms4-gap-01
-    summary: MS4 ya consume los eventos de entrega de MS5 (PR #3, pendiente de merge), pero solo cierra días si PackageId es el packId de MS4; MS3 manda hoy su propio GUID.
+    summary: MS4 consume los eventos de entrega de MS5 y enlaza por DeliveryDayId, PackageId numérico o paciente (MS4#3, #6, #8); falta la evidencia (foto, firma) en DeliveryCompleted.
     severity: high
     blocked_by: ms3
   - id: ms4-gap-02

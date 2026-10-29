@@ -26,7 +26,7 @@ flowchart TB
   MQ -- colas msN.* --> MS4
   MS3 -- service account vía gateway --> GW
   MS4 -- service account vía gateway --> GW
-  MS5 -- directo, sin token --> MOCK[ClinicService<br/>mock de Postman]
+  MS5 -. "ya no llama (MS5#4)" .-> MOCK[ClinicService<br/>mock de Postman]
   MS1[MS1 Clínica<br/>fuera del stack] -. outbox propio .-> MQ1{{paciente-published<br/>fuera de la topología}}
 ```
 
@@ -71,7 +71,7 @@ flowchart TB
 | `Nur.Tricenter.Integration` | Contratos de los eventos (`IntegrationMessageContract` y sus derivados) |
 | `Nur.Tricenter.Observability` | OpenTelemetry, Jaeger y Serilog con enriquecimiento por span |
 
-Se publican en GitHub Packages. Uso real (2026-10-28): MS2, identity y MS4 usan 1.1.0; MS5 solo `Nur.Tricenter.Integration` 1.1.0 (1.2.0 en su rama `dev`); MS3 y MS1 no usan ningún paquete (copias locales de los contratos); el gateway tampoco. La 1.2.0 (agrega `PackageValidated`) existe en el repo de kernels. Ver X-07.
+Se publican en GitHub Packages. Uso real (2026-10-29): MS4 usa 1.4.0; MS5 solo `Nur.Tricenter.Integration` 1.4.0; MS2 e identity usan 1.2.0 (sus `Joseco.*` siguen en 1.1.0, porque la 1.2.0 no está disponible); MS3 y MS1 no usan ningún paquete (copias locales de los contratos; las de MS3 siguen el formato 1.4.0); el gateway tampoco. Cambios recientes de `Integration`: 1.2.0 agrega `PackageValidated`, 1.3.0 le suma `DeliveryDate` y `PatientName`, 1.4.0 suma `DeliveryDayId` a `PackageValidated` y `DeliveryAddedToRoute`. Ver X-07.
 
 ### Observabilidad
 - MS2 e Identity usan `Nur.Tricenter.Observability` (OpenTelemetry → Jaeger, Serilog).
