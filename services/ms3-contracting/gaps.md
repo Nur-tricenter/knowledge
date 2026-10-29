@@ -8,7 +8,7 @@
 | ms3-gap-04 | Errores de dominio devuelven 500 y la validación del lote es parcial | medium | — | abierto |
 | ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales | medium | kernels, `NUGET_TOKEN` | abierto |
 | ms3-gap-06 | Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario | medium | MS4 | abierto |
-| ms3-gap-07 | La orden de producción real depende del campo `menu` que MS4 aún no devuelve | medium | MS4 | resuelto (MS4#4 devuelve `menu`; MS3 arma la orden desde ahí) |
+| ms3-gap-07 | La orden de producción real dependía del campo `menu`, que MS4 no devolvía | medium | MS4 | resuelto (MS4#4 devuelve `menu`; MS3 arma la orden desde ahí) |
 | ms3-gap-08 | `MealPlanPublished` no trae precio: el plan proyectado cuesta 0 | low | MS2 | abierto |
 | ms3-gap-09 | Nadie avisa a MS4 que un día está `InProduction` | low | MS4 | abierto (ms4-gap-04) |
 | ms3-gap-10 | Mensajes no persistentes y colas sin consumidor | low | Joseco, todos | abierto (X-06) |
@@ -44,6 +44,8 @@
 - **Qué haría falta:** mapear esas excepciones a 409/422 y que `validate` reporte el fallo de cada paquete en `results[]`, como ya hace con los errores de `Result`.
 
 ### ms3-gap-05 — Contratos como copias locales
+> **Actualización 2026-10-29:** el kernel ya está en 1.4.0 y MS5 (en `main`) y MS4 lo referencian. MS3 sigue con copias locales, pero la de `PackageValidated` ya sigue el formato 1.4.0 (`PatientName`, `DeliveryDate`, `DeliveryDayId`; MS3#5, #6). Lo que falta es referenciar el paquete 1.4.0. El texto de abajo es el análisis original.
+
 - **Qué pasa:** el feed de GitHub Packages exige `NUGET_TOKEN`, que MS3 aún no usa. `PackageValidated` ya está en `main` del kernel (PR #3, versión 1.2.0), y MS5 lo referencia en su rama `dev`. MS3 no referencia ningún paquete `Nur.Tricenter.*`: usa copias locales equivalentes (mismos campos y `EventType`, namespace `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.*`) de `PackageValidated`, `MealPlanPublished`, `RecipePublished` y `RecipeUpdated`.
 - **Impacto:** si el publicador cambia un campo, las copias no se enteran (el JSON desconocido se ignora sin error). La regla del equipo es no tener copias locales.
 - **Qué haría falta:** que MS3 referencie `Nur.Tricenter.Integration` 1.2.0. El formato en el cable es el mismo, así que el cambio es solo de referencias.

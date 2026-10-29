@@ -52,7 +52,7 @@ sequenceDiagram
   MS3->>MS4: GET /calendars/active-tomorrow (orden de producción)
   Note over MS3: cocina produce
   MS5->>MS5: arma ruta y entrega
-  MS3--)MS5: evento package-validated (paquetes listos; MS5 lo consume solo en su rama dev)
+  MS3--)MS5: evento package-validated (paquetes listos; MS5 lo consume en main desde MS5#3)
   MS5--)MS4: eventos delivery-added-to-route / delivery-completed / delivery-failed
 ```
 
