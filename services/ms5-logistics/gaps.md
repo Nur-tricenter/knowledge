@@ -3,8 +3,8 @@
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
 | ms5-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels (`Nur.Tricenter.Access`) | abierto (X-03) |
-| ms5-gap-02 | El cierre del día en MS4 depende de que el `PackageId` sea el `packId` de MS4 y de un consumidor de MS4 sin merge | high | MS4 | resuelto (X-01: `DeliveryDayId` en MS5#5; consumidor de MS4 mergeado; MS4#8 pendiente) |
-| ms5-gap-03 | En `main` no consume `package-validated`: los paquetes se cargan a mano | medium | MS5 (merge de `dev`) | resuelto en `dev`; PR abierto `dev` → `main` (MS5#3) |
+| ms5-gap-02 | El cierre del día en MS4 depende de que el `PackageId` sea el `packId` de MS4 y de un consumidor de MS4 sin merge | high | MS4 | resuelto (X-01: `DeliveryDayId` en MS5#5; consumidor de MS4 mergeado en MS4#3 y #8) |
+| ms5-gap-03 | En `main` no consume `package-validated`: los paquetes se cargan a mano | medium | MS5 (merge de `dev`) | resuelto (MS5#3, `dev` → `main`) |
 | ms5-gap-04 | 7 de los 10 eventos publicados no tienen consumidores | low | consumidores | parcial (X-02) |
 | ms5-gap-05 | ClinicService es un mock de Postman, se llama directo, sin token y sin resiliencia | medium | MS1 | abierto (X-04) |
 | ms5-gap-06 | Los paquetes van a la última ruta de hoy de cualquier repartidor, y se duplican al reenviar | medium | — | abierto |

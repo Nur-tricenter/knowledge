@@ -8,13 +8,13 @@
 | ms3-gap-04 | Errores de dominio devuelven 500 y la validación del lote es parcial | medium | — | abierto |
 | ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales | medium | kernels, `NUGET_TOKEN` | abierto |
 | ms3-gap-06 | Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario | medium | MS4 | abierto |
-| ms3-gap-07 | La orden de producción real depende del campo `menu` que MS4 aún no devuelve | medium | MS4 | abierto (rama de MS4 sin PR) |
+| ms3-gap-07 | La orden de producción real depende del campo `menu` que MS4 aún no devuelve | medium | MS4 | resuelto (MS4#4 devuelve `menu`; MS3 arma la orden desde ahí) |
 | ms3-gap-08 | `MealPlanPublished` no trae precio: el plan proyectado cuesta 0 | low | MS2 | abierto |
 | ms3-gap-09 | Nadie avisa a MS4 que un día está `InProduction` | low | MS4 | abierto (ms4-gap-04) |
 | ms3-gap-10 | Mensajes no persistentes y colas sin consumidor | low | Joseco, todos | abierto (X-06) |
 | ms3-gap-11 | El outbox no es atómico: el cambio y su fila se guardan en dos `CommitAsync` | medium | — | abierto |
-| ms3-gap-12 | Re-validar una orden da 500 por los paquetes ya validados | high | — | PR abierto (MS3#3) |
-| ms3-gap-13 | El seed corre en la plataforma y crea una orden falsa para mañana | high | — | PR abierto (MS3#4) |
+| ms3-gap-12 | Re-validar una orden da 500 por los paquetes ya validados | high | — | resuelto (MS3#3) |
+| ms3-gap-13 | El seed corre en la plataforma y crea una orden falsa para mañana | high | — | resuelto (MS3#4) |
 | ms3-gap-14 | `daily-order` se congela al primer pedido de la fecha | medium | MS4 | abierto |
 | ms3-gap-15 | Un paciente puede tener varios contratos activos a la vez | low | MS4 | abierto (decisión de negocio) |
 | ms3-gap-16 | Un `GET` con `Content-Type: application/json` y sin cuerpo responde 400 | low | — | abierto |
