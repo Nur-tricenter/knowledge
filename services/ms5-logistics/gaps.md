@@ -3,8 +3,8 @@
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
 | ms5-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels (`Nur.Tricenter.Access`) | abierto (X-03) |
-| ms5-gap-02 | El cierre del día en MS4 depende de que el `PackageId` sea el `packId` de MS4 y de un consumidor de MS4 sin merge | high | MS4 | parcial (X-01) |
-| ms5-gap-03 | En `main` no consume `package-validated`: los paquetes se cargan a mano | medium | MS5 (merge de `dev`) | resuelto en `dev`, pendiente de merge (X-10) |
+| ms5-gap-02 | El cierre del día en MS4 depende de que el `PackageId` sea el `packId` de MS4 y de un consumidor de MS4 sin merge | high | MS4 | resuelto (X-01: `DeliveryDayId` en MS5#5; consumidor de MS4 mergeado; MS4#8 pendiente) |
+| ms5-gap-03 | En `main` no consume `package-validated`: los paquetes se cargan a mano | medium | MS5 (merge de `dev`) | resuelto en `dev`; PR abierto `dev` → `main` (MS5#3) |
 | ms5-gap-04 | 7 de los 10 eventos publicados no tienen consumidores | low | consumidores | parcial (X-02) |
 | ms5-gap-05 | ClinicService es un mock de Postman, se llama directo, sin token y sin resiliencia | medium | MS1 | abierto (X-04) |
 | ms5-gap-06 | Los paquetes van a la última ruta de hoy de cualquier repartidor, y se duplican al reenviar | medium | — | abierto |
@@ -16,6 +16,7 @@
 | ms5-gap-12 | Ocho colas `ms5.*` declaradas sin consumidor en `main` | low | nur-tricenter-local | abierto (X-06) |
 | ms5-gap-13 | Sin OpenTelemetry ni kernel de observabilidad | low | kernels | abierto |
 | ms5-gap-14 | Respuestas inconsistentes y un test de integración incompleto | low | — | abierto |
+| ms5-gap-15 | No migra al arrancar y depende de Neon para correr en la plataforma | low | nur-tricenter-local | abierto (opción offline en nur-tricenter-local#7) |
 
 ## Detalle
 
@@ -82,6 +83,9 @@ No usa `Nur.Tricenter.Observability` ni exporta trazas. El `CorrelationId` de lo
 - `GET …/route/today` no ordena por `sequenceOrder`, y el respaldo `index + 1` para entregas sin secuencia puede repetir números.
 - `RouteLifecycleIntegrationTests.CompleteDeliveryLifecycle_CreatesRoute_AddsDeliveries_Starts_AndCompletes` solo crea el repartidor y la ruta: no prueba lo que dice su nombre.
 - No hay validación de rango de coordenadas.
+
+### ms5-gap-15 — Migraciones y BD en la plataforma
+MS5 no aplica migraciones al arrancar (las de Neon se aplican a mano) y en la plataforma necesita el `.env` con la cadena de Neon. Sin credenciales, la única forma de correrlo en local es apuntar el `.env` a la BD `ms5_logistics` del Postgres compartido (la crea `start-stack` desde nur-tricenter-local#7) y correr `dotnet ef database update`. Al mergear `dev` hay que aplicar `AddInboxMessages` en Neon. Opción: un job `--migrate` one-shot como el de MS4.
 
 ## Inconsistencias doc ↔ código
 En esta ficha se documentó **el código**.

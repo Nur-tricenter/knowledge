@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | ms3-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels, identity | abierto (X-11) |
 | ms3-gap-02 | Los pacientes (MS1) son 3 simulados | high | MS1 | abierto (X-04) |
-| ms3-gap-03 | `PackageValidated` no trae el `packId` de MS4 ni el tipo de `PatientId` que usa MS5 | high | MS5, MS4 | abierto (X-10, X-01) |
+| ms3-gap-03 | `PackageValidated` no trae el `packId` de MS4 ni el tipo de `PatientId` que usa MS5 | high | MS5, MS4 | `packId` resuelto (MS3#6, kernel 1.4.0); falta alinear el tipo de `PatientId` (X-10, X-01) |
 | ms3-gap-04 | Errores de dominio devuelven 500 y la validación del lote es parcial | medium | — | abierto |
 | ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales | medium | kernels, `NUGET_TOKEN` | abierto |
 | ms3-gap-06 | Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario | medium | MS4 | abierto |
@@ -13,6 +13,11 @@
 | ms3-gap-09 | Nadie avisa a MS4 que un día está `InProduction` | low | MS4 | abierto (ms4-gap-04) |
 | ms3-gap-10 | Mensajes no persistentes y colas sin consumidor | low | Joseco, todos | abierto (X-06) |
 | ms3-gap-11 | El outbox no es atómico: el cambio y su fila se guardan en dos `CommitAsync` | medium | — | abierto |
+| ms3-gap-12 | Re-validar una orden da 500 por los paquetes ya validados | high | — | PR abierto (MS3#3) |
+| ms3-gap-13 | El seed corre en la plataforma y crea una orden falsa para mañana | high | — | PR abierto (MS3#4) |
+| ms3-gap-14 | `daily-order` se congela al primer pedido de la fecha | medium | MS4 | abierto |
+| ms3-gap-15 | Un paciente puede tener varios contratos activos a la vez | low | MS4 | abierto (decisión de negocio) |
+| ms3-gap-16 | Un `GET` con `Content-Type: application/json` y sin cuerpo responde 400 | low | — | abierto |
 
 ## Detalle
 
@@ -27,6 +32,8 @@
 - **Qué haría falta:** MS1 con un evento de paciente publicado (para una copia local, como los planes) o un endpoint. MS5 ya espera un contrato propio de MS1 (X-04); conviene acordar uno solo.
 
 ### ms3-gap-03 — El evento no calza con MS5 ni con MS4
+> **Actualización 2026-10-29:** el `packId` de MS4 ya viaja en `PackageValidated.DeliveryDayId` (kernel 1.4.0, [kernel#5](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/5)). MS3 lo envía ([MS3#6](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/6)), MS5 lo reenvía ([MS5#5](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/5)) y MS4 lo usa para enlazar la entrega (MS4#6, reunido en MS4#8, pendiente de merge). Es `null` si no hay calendario que coincida. Siguen abiertos el tipo de `PatientId` (`string` en MS5, `Guid` en MS3/MS4) y las coordenadas nulas. El texto de abajo es el análisis original.
+
 - **Qué pasa:** el owner de MS5 decidió que el `packageId` del evento sea el `packId` de MS4, lo que además cerraría X-01 (MS5 podría informar el resultado de cada día). `PackageValidated.PackageId` es el id del paquete de MS3, un GUID propio. MS5 usa `string` para `patientId` y MS3/MS4 usan `Guid`. `AddressCoordinates` no admite nulos en MS5, y el evento los manda `null` si no hay calendario que coincida.
 - **Impacto:** MS5 ya consume la cola (rama `dev`), pero no puede correlacionar la entrega con el día de MS4. MS4 consume los eventos de entrega de MS5 (PR #3 de MS4, abierto) y espera que su `PackageId` sea el `packId` entero; con el GUID de MS3 no puede cerrar el día (`Delivered`/`Failed`).
 - **Qué haría falta:** acordar con MS5 el campo (agregar el `packId` de MS4 al evento) y el tipo del id de paciente. MS3 recibe el `packId` de cada entrega en `active-tomorrow` (hoy lo traduce a `SimActiveCalendar.PackageId`), pero no lo guarda en el `Package`; habría que asociarlo al crear el paquete.
@@ -64,6 +71,23 @@ La librería Joseco publica mensajes no persistentes en exchanges no durables: u
 - **Qué pasa:** `ProcessPaymentCommandHandler` y `ApproveQualityCommandHandler` llaman dos veces a `IUnitOfWork.CommitAsync` (que es un `SaveChangesAsync`): primero el agregado (contrato pagado, paquete `Validated`) y después la fila del outbox (`CreateSchedule`, `TransferToLogistics`). No hay transacción explícita que envuelva ambos.
 - **Impacto:** si el API cae o la BD falla entre los dos commits, el cambio queda guardado sin su fila: un contrato cobrado al que nunca se le pide calendario, o un paquete validado que MS5 nunca recibe. Nada lo detecta ni lo reintenta.
 - **Qué haría falta:** agregar la fila antes del primer `CommitAsync` y guardar todo en un solo `SaveChangesAsync` (o envolver ambos en `BeginTransactionAsync`).
+
+Los gaps 12 a 16 salieron de la prueba integral en el stack local del 2026-10-28.
+
+### ms3-gap-12 — Re-validar una orden
+`POST /production/packages/validate` recorre **todos** los paquetes de la orden y `ApproveQualityControl` lanza si el paquete no está `Labeled`. Si la orden ya se validó y se le agrega otro paquete, la segunda llamada responde **500** por los ya `Validated`, y el nuevo nunca sale a MS5. **PR [MS3#3](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/3):** los ya validados cuentan como éxito y no se re-aprueban (tampoco se duplica su `TransferToLogistics`).
+
+### ms3-gap-13 — Seed en la plataforma
+`contracting.compose.yml` tenía `Seed__Enabled: "true"`. El seed crea una `DailyProductionOrder` para mañana con recetas inventadas, 2 paquetes (`Assembled` y `Pending`) y contratos pagados sin calendario en MS4. Con esa orden, `daily-order` de mañana **no consulta a MS4**, y los paquetes sembrados salen como `package-validated` sin un día detrás, o hacen fallar la validación. **PR [MS3#4](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/4):** `Seed__Enabled: "false"` en la variante de plataforma (el standalone conserva el seed).
+
+### ms3-gap-14 — Orden de producción congelada
+Si ya existe la orden de una fecha, `daily-order` la devuelve sin volver a pedir `active-tomorrow`. Los días que MS4 deja listos después (contrato pagado o dirección cargada más tarde) no entran en `recipesSummary`, aunque se les puede crear el paquete igual (`POST /production/packages` no valida que el paciente esté en la orden). Opciones: reconsolidar mientras la orden no esté en producción, o fijar un horario de corte que MS4 también respete.
+
+### ms3-gap-15 — Varios contratos activos por paciente
+`POST /contracts` no impide que un paciente con un contrato activo contrate otro, y MS4 crea un calendario por contrato: el paciente termina con dos entregas el mismo día. `charge-control` sí rechaza el caso (`ACTIVE_CONTRACT`). Es una decisión de negocio; también afecta el enlace por paciente de MS4 (ver ms4 `messaging.md`).
+
+### ms3-gap-16 — `GET` con `Content-Type` y sin cuerpo
+FastEndpoints intenta deserializar el cuerpo cuando la petición trae `Content-Type: application/json`, aunque sea un `GET` vacío: `GET /production/daily-order` responde 400 (`The input does not contain any JSON tokens`). Algunos clientes HTTP mandan ese header siempre.
 
 ## Inconsistencias doc ↔ código
 En esta ficha se documentó **el código**.

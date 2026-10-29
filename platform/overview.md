@@ -56,7 +56,7 @@ sequenceDiagram
   MS5--)MS4: eventos delivery-added-to-route / delivery-completed / delivery-failed
 ```
 
-Las flechas continuas son REST y las punteadas son eventos RabbitMQ. Los dos últimos pasos todavía no cierran de punta a punta: MS5 consume `package-validated` solo en `dev`, y MS4 solo reconoce el día si el `PackageId` es su `packId` (X-01, X-10 en [../gaps/cross-service-gaps.md](../gaps/cross-service-gaps.md)).
+Las flechas continuas son REST y las punteadas son eventos RabbitMQ. Los dos últimos pasos cierran de punta a punta: MS5 consume `package-validated` y MS4 reconoce el día por `DeliveryDayId` (kernel 1.4.0), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 en [../gaps/cross-service-gaps.md](../gaps/cross-service-gaps.md); MS4#8 pendiente de merge).
 
 ## Actores humanos
 | Actor | Interactúa con | Cómo |
