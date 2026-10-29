@@ -4,7 +4,7 @@
 |---|---|---|---|---|
 | ms3-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels, identity | abierto (X-11) |
 | ms3-gap-02 | Los pacientes (MS1) son 3 simulados | high | MS1 | abierto (X-04) |
-| ms3-gap-03 | `PackageValidated` no trae el `packId` de MS4 ni el tipo de `PatientId` que usa MS5 | high | MS5, MS4 | abierto (X-10, X-01) |
+| ms3-gap-03 | `PackageValidated` no trae el `packId` de MS4 ni el tipo de `PatientId` que usa MS5 | high | MS5, MS4 | `packId` resuelto (MS3#6, kernel 1.4.0); falta alinear el tipo de `PatientId` (X-10, X-01) |
 | ms3-gap-04 | Errores de dominio devuelven 500 y la validación del lote es parcial | medium | — | abierto |
 | ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales | medium | kernels, `NUGET_TOKEN` | abierto |
 | ms3-gap-06 | Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario | medium | MS4 | abierto |
@@ -32,6 +32,8 @@
 - **Qué haría falta:** MS1 con un evento de paciente publicado (para una copia local, como los planes) o un endpoint. MS5 ya espera un contrato propio de MS1 (X-04); conviene acordar uno solo.
 
 ### ms3-gap-03 — El evento no calza con MS5 ni con MS4
+> **Actualización 2026-10-29:** el `packId` de MS4 ya viaja en `PackageValidated.DeliveryDayId` (kernel 1.4.0, [kernel#5](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels/pull/5)). MS3 lo envía ([MS3#6](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/6)), MS5 lo reenvía ([MS5#5](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/5)) y MS4 lo usa para enlazar la entrega (MS4#6, reunido en MS4#8, pendiente de merge). Es `null` si no hay calendario que coincida. Siguen abiertos el tipo de `PatientId` (`string` en MS5, `Guid` en MS3/MS4) y las coordenadas nulas. El texto de abajo es el análisis original.
+
 - **Qué pasa:** el owner de MS5 decidió que el `packageId` del evento sea el `packId` de MS4, lo que además cerraría X-01 (MS5 podría informar el resultado de cada día). `PackageValidated.PackageId` es el id del paquete de MS3, un GUID propio. MS5 usa `string` para `patientId` y MS3/MS4 usan `Guid`. `AddressCoordinates` no admite nulos en MS5, y el evento los manda `null` si no hay calendario que coincida.
 - **Impacto:** MS5 ya consume la cola (rama `dev`), pero no puede correlacionar la entrega con el día de MS4. MS4 consume los eventos de entrega de MS5 (PR #3 de MS4, abierto) y espera que su `PackageId` sea el `packId` entero; con el GUID de MS3 no puede cerrar el día (`Delivered`/`Failed`).
 - **Qué haría falta:** acordar con MS5 el campo (agregar el `packId` de MS4 al evento) y el tipo del id de paciente. MS3 recibe el `packId` de cada entrega en `active-tomorrow` (hoy lo traduce a `SimActiveCalendar.PackageId`), pero no lo guarda en el `Package`; habría que asociarlo al crear el paquete.
