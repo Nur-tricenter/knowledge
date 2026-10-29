@@ -54,7 +54,7 @@
 - **Qué haría falta:** validar la duración antes de cobrar (o contra la proyección de MS2), o una acción compensatoria (cancelar/reembolsar) y una alerta sobre filas `Rejected`.
 
 ### ms3-gap-07 — `menu` en `active-tomorrow`
-- **Qué pasa:** MS3 arma la orden con el `menu` de cada entrega. `main` de MS4 no lo devuelve (`ActiveTomorrowLineDto` no tiene `Menu`); el cambio está en la rama `feat/active-tomorrow-menu` de MS4, sin PR abierto (revisado 2026-10-28).
+- **Qué pasa:** MS3 arma la orden con el `menu` de cada entrega. Resuelto: `main` de MS4 ya devuelve `menu` en `active-tomorrow` (MS4#4, mergeado el 2026-10-28). Antes `ActiveTomorrowLineDto` no tenía `Menu` y el cambio estaba en la rama `feat/active-tomorrow-menu`, sin PR (revisado 2026-10-28).
 - **Impacto:** sin ese cambio, la orden diaria solo funciona con los 3 planes simulados; con un plan real responde 422 `NO_RECIPES` (antes era un 500).
 - **Qué haría falta:** abrir el PR de esa rama en MS4, revisarlo y mergearlo (aditivo: no rompe a los demás consumidores).
 

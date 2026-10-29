@@ -121,7 +121,7 @@ events_consumed:
     exchange: delivery-added-to-route
     contract: DeliveryAddedToRoute
     handler: DeliveryAddedToRouteConsumer
-    effect: Guarda en DeliveryRouteLinks la relación DeliveryId de MS5 → día de MS4 (PackageId = packId = DeliveryDay.Id). Un PackageId no numérico se ignora.
+    effect: Guarda en DeliveryRouteLinks la relación DeliveryId de MS5 → día de MS4 (DeliveryDayId; si falta, PackageId numérico = DeliveryDay.Id; si no, el día más temprano del paciente en producción sin entrega). Sin coincidencia se ignora.
     idempotent: true
   - queue: ms4.delivery-completed
     exchange: delivery-completed

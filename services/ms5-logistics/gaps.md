@@ -6,7 +6,7 @@
 | ms5-gap-02 | El cierre del día en MS4 depende de que el `PackageId` sea el `packId` de MS4 y de un consumidor de MS4 sin merge | high | MS4 | resuelto (X-01: `DeliveryDayId` en MS5#5; consumidor de MS4 mergeado en MS4#3 y #8) |
 | ms5-gap-03 | En `main` no consume `package-validated`: los paquetes se cargan a mano | medium | MS5 (merge de `dev`) | resuelto (MS5#3, `dev` → `main`) |
 | ms5-gap-04 | 7 de los 10 eventos publicados no tienen consumidores | low | consumidores | parcial (X-02) |
-| ms5-gap-05 | ClinicService es un mock de Postman, se llama directo, sin token y sin resiliencia | medium | MS1 | abierto (X-04) |
+| ms5-gap-05 | ClinicService es un mock de Postman, se llama directo, sin token y sin resiliencia | medium | MS1 | resuelto (MS5#4 quitó la llamada; X-04 sigue abierto por el teléfono) |
 | ms5-gap-06 | Los paquetes van a la última ruta de hoy de cualquier repartidor, y se duplican al reenviar | medium | — | abierto |
 | ms5-gap-07 | Casos de uso del dominio sin endpoint: 3 eventos inalcanzables y el repartidor nunca cambia de estado | medium | — | abierto |
 | ms5-gap-08 | Cerrar la última entrega de una ruta no iniciada devuelve 422 y revierte todo | medium | — | abierto |
@@ -42,6 +42,8 @@
 - **Qué haría falta:** que los consumidores interesados (p. ej. MS3 con `route-completed`) pidan sus colas en `nur-tricenter-local`.
 
 ### ms5-gap-05 — Dependencia síncrona frágil con ClinicService
+> **Actualización 2026-10-29:** resuelto por [MS5#4](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/4): se quitaron `IClinicService`, `ClinicService`, `ClinicServiceOptions` y `ClinicService__BaseUrl`. El nombre del paciente llega en `PackageValidated.PatientName` (kernel 1.3.0) o en `patientName` de `POST /packages/deliveries`, y `GET route/today` lo lee de la base. El texto de abajo es el análisis original.
+
 - **Qué pasa:** `ClinicService__BaseUrl` apunta a un mock de Postman; la llamada sale directo (no por el gateway), sin token, sin reintentos ni timeout propio. Los errores del destino se devuelven como **422** (y un timeout como 500). `PhoneNumber` se recibe y no se usa.
 - **Impacto:** si el destino cae, no se pueden cargar paquetes **y el repartidor no puede ver su ruta del día**, aunque esté completa en la BD.
 - **Qué haría falta:** el MS1 real detrás del gateway con una service account; un resilience handler (reintentos + timeout); devolver 502/503 ante fallos del destino; y en `route/today` degradar al `patientId` en vez de fallar (o guardar el nombre del paciente al crear la entrega).
