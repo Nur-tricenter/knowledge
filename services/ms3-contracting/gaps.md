@@ -3,7 +3,7 @@
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
 | ms3-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels, identity | abierto (X-11) |
-| ms3-gap-02 | Los pacientes (MS1) son 3 simulados | high | MS1 | abierto (X-04) |
+| ms3-gap-02 | Los pacientes (MS1) son 3 simulados | high | MS1 | resuelto (MS3#8, MS1#2) |
 | ms3-gap-03 | `PackageValidated` no trae el `packId` de MS4 ni el tipo de `PatientId` que usa MS5 | high | MS5, MS4 | `packId` resuelto (MS3#6, kernel 1.4.0); falta alinear el tipo de `PatientId` (X-10, X-01) |
 | ms3-gap-04 | Errores de dominio devuelven 500 y la validación del lote es parcial | medium | — | abierto |
 | ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales | medium | kernels, `NUGET_TOKEN` | abierto |
@@ -27,6 +27,8 @@
 - **Qué haría falta:** definir `contracting.*` en el kernel (contrato, factura, orden, paquete), adoptar `AddSecurity` y proteger cada endpoint, igual que MS2 y MS4. Y resolver la autorización por objeto (X-08).
 
 ### ms3-gap-02 — Pacientes simulados
+> **Actualización 2026-10-31 — resuelto.** [MS3#8](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/8) agrega el cliente `Clinic` (`HttpClinicClient` + `ClinicSimulationService`): con `Clinic__BaseUrl` MS3 lee el paciente de MS1 por el gateway como `ms3-service`; un 404 de MS1 ([MS1#2](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional/pull/2)) se vuelve `PATIENT_NOT_FOUND`. Sin la variable siguen los 3 simulados. [MS3#9](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/9) además manda el teléfono en `PackageValidated.PatientPhone`. El texto de abajo es el análisis original.
+
 - **Qué pasa:** `POST /contracts` y el etiquetado consultan a `ISimulationService`, que conoce 3 pacientes fijos. Cualquier otro `patientId` da 404 `PATIENT_NOT_FOUND`.
 - **Impacto:** no se puede contratar con un paciente real.
 - **Qué haría falta:** MS1 con un evento de paciente publicado (para una copia local, como los planes) o un endpoint. MS5 ya espera un contrato propio de MS1 (X-04); conviene acordar uno solo.

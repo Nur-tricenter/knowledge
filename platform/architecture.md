@@ -26,7 +26,7 @@ flowchart TB
   MQ -- colas msN.* --> MS4
   MS3 -- service account vía gateway --> GW
   MS4 -- service account vía gateway --> GW
-  MS5 -. "ya no llama (MS5#4)" .-> MOCK[ClinicService<br/>mock de Postman]
+  MS3 -- "service account vía gateway<br/>GET Patient/{id}" --> MS1c[MS1 Clínica]
   MS1[MS1 Clínica<br/>fuera del stack] -. outbox propio .-> MQ1{{paciente-published<br/>fuera de la topología}}
 ```
 

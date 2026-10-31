@@ -37,7 +37,7 @@ sequenceDiagram
 ## F2 — Contratar y pagar un plan → calendario en MS4 (MS3 → MS4)
 - **Actor:** paciente desde el frontend.
 - **Disparador:** `POST /contracts` y luego `POST /billing/charge-plan`.
-- **Precondición:** el plan existe en `CatalogPlans` (F1) o en la simulación; el paciente es uno de los 3 simulados.
+- **Precondición:** el plan existe en `CatalogPlans` (F1) o en la simulación; el paciente existe en MS1 (o es uno de los 3 simulados si `Clinic__BaseUrl` no está configurado).
 - **Camino feliz:**
   1. `POST /contracts` crea el contrato `PendingPayment` (201).
   2. `POST /billing/charge-plan` crea la factura, activa el contrato y guarda en el outbox la fila `CreateSchedule` con `durationDays` (días del plan) y `startDate` (día siguiente). Responde 200.

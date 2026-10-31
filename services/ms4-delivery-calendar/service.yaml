@@ -138,7 +138,7 @@ events_consumed:
 
 gaps:
   - id: ms4-gap-01
-    summary: MS4 consume los eventos de entrega de MS5 y enlaza por DeliveryDayId, PackageId numérico o paciente (MS4#3, #6, #8); falta la evidencia (foto, firma) en DeliveryCompleted.
+    summary: MS4 consume los eventos de entrega de MS5 y enlaza por DeliveryDayId, PackageId numérico o paciente (MS4#3, #6, #8); guarda la foto y la firma de DeliveryCompleted desde el kernel 1.5.0 (MS4#10).
     severity: high
     blocked_by: ms3
   - id: ms4-gap-02

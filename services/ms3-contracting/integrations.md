@@ -59,3 +59,19 @@ sequenceDiagram
   G->>M4: POST /api/v1/schedule
   M4-->>W: 200 { calendarId, days[] }
 ```
+
+## MS3 → MS1: pacientes (`Clinic__BaseUrl`)
+MS3 lee el paciente de MS1 por REST, sin copia local, con la misma service account `ms3-service` que usa para MS4. Lo usan el alta del contrato, la etiqueta y la liberación del paquete (de donde sale el teléfono para `PackageValidated.PatientPhone`). Sin `Clinic__BaseUrl` (standalone) se usan 3 pacientes simulados.
+
+- **Ruta:** `GET /api/clinica-nutricional/v1/Patient/{id}` (MS1 solo exige un token válido, sin scopes). Responde la entidad `Paciente` (`id`, `nombre`, `apellido`, `telefono`, …); `404` si no existe (MS1#2).
+- **Fallos:** un `404` se traduce en `PATIENT_NOT_FOUND`. Si MS1 no responde al liberar el paquete, el evento sale igual con `PatientPhone` nulo (el paquete ya quedó aprobado).
+
+```mermaid
+sequenceDiagram
+  participant M3 as MS3
+  participant G as Gateway
+  participant M1 as MS1
+  M3->>G: GET /api/clinica-nutricional/v1/Patient/{id} (Bearer ms3-service)
+  G->>M1: GET /api/v1/Patient/{id}
+  M1-->>M3: 200 { id, nombre, apellido, telefono, … } | 404
+```

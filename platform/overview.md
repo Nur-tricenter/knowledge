@@ -24,7 +24,7 @@ Cada paso pertenece a un microservicio distinto, y el foco del diplomado está e
 | — | Identity | Usuarios, scopes y emisión de JWT | [nur-tricenter-identity](https://github.com/Nur-tricenter/nur-tricenter-identity) | [complete](../services/identity-service/README.md) |
 | — | API Gateway | Punto de entrada único, ruteo dinámico vía Consul | [nur-tricenter-api-gateway](https://github.com/Nur-tricenter/nur-tricenter-api-gateway) | [complete](../services/gateway-api/README.md) |
 
-MS1 corre en el stack local desde 2026-10-31, pero ningún servicio lo llama de verdad: MS5 dejó de llamarlo (MS5#4: el nombre del paciente llega en `PackageValidated`) y MS3 trabaja con pacientes simulados. Su ficha sigue en `draft` hasta que lo revise Diego (X-04).
+MS1 corre en el stack local desde 2026-10-31 y MS3 ya lo usa: lee el paciente de MS1 por el gateway (MS3#8) y manda su teléfono a MS5 en `package-validated` (MS3#9, MS5#8). MS5 no lo llama (MS5#4). Su ficha sigue en `draft` hasta que lo revise Diego; falta el vínculo `sub` → paciente (X-08).
 
 Repos de soporte (no son microservicios de negocio):
 - [nur-tricenter-shared-kernels](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels): paquetes NuGet compartidos (`Access`, `Security`, `Integration`, `Observability`).

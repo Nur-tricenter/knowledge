@@ -7,7 +7,7 @@
 - **Formato de error:** no hay manejador de excepciones ni ProblemDetails configurado. Un recurso inexistente termina en **500** (los repositorios lanzan `NullReferenceException`).
 - **Ids:** todos GUID.
 - **Documentación interactiva:** NSwag, `/swagger`, activo salvo `OpenApi:Enabled=false` (la plataforma lo apaga). Cada llamada necesita el token.
-- **Llamado por:** hoy ningún servicio (MS5 ya no usa `contact-information`). El README prevé un frontend (paciente, recepción, nutricionista) que no existe; hoy se usa desde Swagger y desde `IntegrationTests`.
+- **Llamado por:** MS3 (`GET /api/v1/Patient/{id}`, como `ms3-service`, desde MS3#8). `contact-information` no lo llama nadie desde que MS5 dejó el ClinicService (MS5#4). El README prevé un frontend (paciente, recepción, nutricionista) que no existe; hoy se usa desde Swagger y desde `IntegrationTests`.
 
 ## Contrato para MS5: `POST /api/v1/patients/contact-information`
 Cuerpo: arreglo de ids de paciente (`["<guid>", …]`). Respuesta: `{ value: [{ patientId, phoneNumber, fullName }], isSuccess, … }`; los ids que no existen se omiten. Controlador `PatientsContactController` (`api/v1/patients`). El teléfono sale de `Paciente.Telefono`, opcional en `CreatePaciente` (`telefono`).
@@ -47,7 +47,7 @@ Los nombres de ruta salen de `nameof(...)`, así que respetan mayúsculas tal co
 - Sin validación: campos vacíos o un `CI` repetido crean otro paciente.
 
 ### `GET /api/v1/Patient/{id}`
-Devuelve la entidad `Paciente` con sus consultas iniciales (`id`, `ci`, `nombre`, `apellido`, `consultaIniciales`). Si no existe → **500** (la rama `NotFound` del controlador nunca se alcanza porque el repositorio lanza antes).
+Devuelve la entidad `Paciente` con sus consultas iniciales (`id`, `ci`, `nombre`, `apellido`, `telefono`, `consultaIniciales`). Si no existe → **404** (desde MS1#2; antes era 500 porque el repositorio lanzaba antes de llegar a la rama `NotFound`).
 
 ### `POST /api/v1/Patient/{pacienteId}/Plan`
 ```json
@@ -99,6 +99,6 @@ No hay manejador global (`UseExceptionHandler`, `IExceptionHandler` o filtros). 
 | Situación | HTTP |
 |---|---|
 | JSON mal formado o tipos incorrectos (`[ApiController]`) | 400 |
-| Recurso inexistente (`NullReferenceException` en repositorios) | 500 |
+| Recurso inexistente (`NullReferenceException` en repositorios) | 500 (salvo `GET /Patient/{id}`: 404 desde MS1#2) |
 | Value object inválido (`ArgumentException` de `Antecedente`) | 500 |
 | Violación de clave foránea en SQL Server | 500 |

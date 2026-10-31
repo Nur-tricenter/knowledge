@@ -17,7 +17,7 @@ MS1 es la parte **clínica** del negocio: registra al paciente, toma su consulta
 - No define recetas ni planes del catálogo → **MS2**. El `PlanAlimenticio` de MS1 es un concepto propio y **no referencia** al plan de MS2 (el README del repo dice que valida el plan contra MS2, pero el código no lo hace).
 - No gestiona contratos ni pagos → **MS3**.
 - No arma calendarios de entrega → **MS4**.
-- No entrega ni guarda datos de contacto para logística → **MS5** los pide, pero MS1 no tiene teléfono ni el endpoint que MS5 espera.
+- No entrega datos de contacto a logística directamente → el teléfono lo lee **MS3** de `GET /Patient/{id}` y lo manda a **MS5** en `PackageValidated.PatientPhone`.
 - No autentica ni autoriza → **identity**; hoy MS1 tampoco valida tokens.
 - **No consume eventos** de ningún otro servicio.
 
@@ -38,16 +38,16 @@ flowchart LR
   DB -- "OutboxMessages" --> W[MS1 WorkerService]
   W -. "paciente-published<br/>(PacientePublished)" .-> X{{RabbitMQ}}
   X -. "gestion-clinica-nutricional.default<br/>(nadie la consume)" .-> SINK[(sink)]
-  MS5[MS5 Logística] -- "POST /api/v1/patients/contact-information<br/>(va a un mock de Postman, no a MS1)" --> MOCK[Mock Postman]
+  MS3[MS3 Contratación] -- "GET /api/clinica-nutricional/v1/Patient/{id}<br/>(ms3-service, vía gateway)" --> API
 ```
 
-## Lo que la plataforma espera de MS1
-Otros repos ya asumen un MS1 que todavía no coincide con este código:
+## Lo que la plataforma toma de MS1
+Estado al 2026-10-31:
 
 | Quién | Qué espera | Estado en el código de MS1 |
 |---|---|---|
-| **MS5** (`ClinicService`) | `POST /api/v1/patients/contact-information` con un array de `patientId` (texto) → `[{ patientId, phoneNumber, fullName }]`. Hoy, **directo y sin token**, contra un mock de Postman | **Existe** desde MS1#1: `POST /api/v1/patients/contact-information` (arreglo de ids → `[{ patientId, phoneNumber, fullName }]`, omite los inexistentes). `Paciente.Telefono` es opcional. MS5 ya no lo llama (MS5#4) |
-| **MS3** (modo simulación) | `GET /api/v1/patients/{id}` → `{ patientId, fullName, clinicalStatus }`, contra `ExternalServices:SimulationMockBaseUrl` o 3 pacientes en memoria | Existe `GET /api/v1/Patient/{id}`, pero devuelve la entidad `Paciente` (`id`, `ci`, `nombre`, `apellido`, `consultaIniciales`) y un id inexistente da **500**, no 404 |
+| **MS5** (`ClinicService`, ya retirado) | Antes llamaba a `POST /api/v1/patients/contact-information` contra un mock de Postman | MS5#4 quitó la llamada: el nombre y el teléfono le llegan en `package-validated`. El endpoint **existe** en MS1 desde MS1#1 (arreglo de ids → `[{ patientId, phoneNumber, fullName }]`, omite los inexistentes) y nadie lo llama |
+| **MS3** | `GET /api/clinica-nutricional/v1/Patient/{id}` por el gateway, como `ms3-service` (con `Clinic__BaseUrl`; sin ella usa 3 pacientes simulados) | **Funciona** desde MS3#8: lee `id`, `nombre`, `apellido` y `telefono` de la entidad `Paciente`. Un id inexistente da **404** desde MS1#2 (antes 500) |
 | **nur-tricenter-local** | `ms1-clinica-nutricional/ms1.compose.yml`, proyectos `src/ClinicaNutricional.Api` y `src/ClinicaNutricional.WorkerService`, contenedores `nur-tricenter-clinica-nutricional-api`/`-workerservice`, ruta `/api/clinica-nutricional/v1/...` en el gateway (o sea, nombre Consul `clinica-nutricional`) | **Resuelto** (MS1#1 y local#8): `ms1.compose.yml` en la raíz del repo `ms1-gestion-clinica-nutricional`, contenedores `nur-tricenter-clinica-nutricional-{migrate,api,workerservice}`, registro en Consul y `start-stack` compila los proyectos reales (`GestionClinicaNutricional*`) |
 | **Topología RabbitMQ** | 7 colas `ms1.*`: `food-published`, `food-nutritional-info-updated`, `recipe-published`, `recipe-updated`, `meal-plan-published`, `user-published`, `user-updated` | Ninguna se consume |
 | **Topología RabbitMQ** | — (no declara ningún exchange de MS1) | MS1 publica en `paciente-published`, que la topología no conoce |

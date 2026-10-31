@@ -130,4 +130,4 @@ stateDiagram-v2
 | `CatalogPlans` (id, nombre, tipo, días, comidas por día) | MS2 | Eventos `meal-plan-published` (upsert). Sin precio: `MealPlanPublished` no lo trae, así que el costo proyectado es 0 |
 | `CatalogRecipes` (id, nombre, instrucciones) | MS2 | Eventos `recipe-published` y `recipe-updated` (upsert) |
 | `InboxMessages` | — | Un registro por mensaje procesado, para ignorar duplicados |
-| Pacientes | MS1 | **Simulados** (3 fijos). No hay proyección real todavía |
+| Pacientes | MS1 | Se consultan por REST cada vez (`GET /api/clinica-nutricional/v1/Patient/{id}` con `ms3-service`, desde MS3#8); no hay copia local. Sin `Clinic__BaseUrl` quedan los 3 simulados |

@@ -1,5 +1,5 @@
 # Ficha estructurada de MS5. Fuente: código de Nur-tricenter/ms5-logistics-and-delivery, rama main (4aabeb4, revisado 2026-10-28).
-# Nota 2026-10-29: el consumidor de package-validated ya está en main (MS5#3). events_consumed de abajo sigue sin reflejarlo; lo actualiza el owner de MS5.
+# Actualizado 2026-10-31: consumidor de package-validated en main (MS5#3), sin llamadas salientes (MS5#4), kernel 1.5.0 (MS5#7, #8).
 
 id: ms5
 name: Logística y entregas (Logistics and Delivery)
@@ -11,8 +11,8 @@ status: complete
 summary: >-
   Última milla de la plataforma: registra repartidores, arma la ruta del día de cada uno, ordena las
   paradas desde la sucursal y registra cada entrega (foto y firma) o su fallo. Publica 10 eventos de
-  logística vía outbox (MS4 consume los delivery-*) y en main no consume ningún evento: los paquetes
-  entran solo por REST. No llama a MS4.
+  logística vía outbox (MS4 consume los delivery-*) y consume package-validated de MS3; guarda el
+  nombre y el teléfono del paciente que trae ese evento. No llama a MS1 ni a MS4.
 stack: [.NET 10, Clean Architecture, DDD (Joseco.DDD.Core), Ardalis.ApiEndpoints, MediatR, FluentValidation, EF Core, PostgreSQL (Neon), RabbitMQ (Joseco), Consul]
 
 runtime:
@@ -55,7 +55,7 @@ endpoints:
     path: /api/v1/couriers/{courierId}/route/today
     scope: null
     callers: [frontend]
-    summary: Ruta de hoy del repartidor con secuencia, dirección, estado y nombre del paciente (pedido a ClinicService). Anónimo.
+    summary: Ruta de hoy del repartidor con secuencia, dirección, estado, nombre y teléfono del paciente (guardados con la entrega). Anónimo.
     idempotent: true
   - method: POST
     path: /api/v1/routes/{routeId}/start
@@ -82,14 +82,7 @@ endpoints:
     summary: Health check anónimo para Consul; incluye Postgres (503 si cae) solo cuando el registro en Consul está habilitado.
     idempotent: true
 
-sync_calls:
-  - target: ms1
-    method: POST
-    path: /api/v1/patients/contact-information
-    via: direct
-    auth: none
-    purpose: Validar que los pacientes de un lote existen y obtener su nombre (ClinicService de MS1). Hoy apunta a un mock de Postman, no al MS1 real ni al gateway.
-    on_failure: Sin reintentos ni timeout propio. No-2xx → 422 ClinicService.RequestFailed; timeout → 500. Sin degradación, falla también GET route/today.
+sync_calls: []
 
 events_published:
   - exchange: courier-created
@@ -143,16 +136,20 @@ events_published:
     trigger: Entrega fallida (POST …/fail) o cada entrega abierta al cancelar una ruta.
     outbox: true
 
-# En main el worker es solo productor. PackageValidatedConsumer (cola ms5.package-validated) existe
-# antes del 2026-10-29 solo en la rama dev (ms5-gap-03); desde MS5#3 consume ms5.package-validated en main.
-events_consumed: []
+events_consumed:
+  - queue: ms5.package-validated
+    exchange: package-validated
+    contract: PackageValidated
+    handler: PackageValidatedConsumer
+    effect: Agrega el paquete como Delivery Pending a la ruta de su DeliveryDate; guarda PatientName, PatientPhone y DeliveryDayId. Sin ruta para la fecha, reintenta y luego cola de error.
+    idempotent: true
 
 gaps:
   - id: ms5-gap-01
     summary: Sin autenticación ni scopes logistics.* en el kernel; todos los endpoints son anónimos, también vía gateway.
     severity: high
   - id: ms5-gap-02
-    summary: Resuelto en lo principal. MS5 reenvía DeliveryDayId (MS5#5, kernel 1.4.0) y MS4 consume los eventos (MS4#3, #8). Falta la evidencia (foto, firma) en DeliveryCompleted.
+    summary: Resuelto en lo principal. MS5 reenvía DeliveryDayId (MS5#5, kernel 1.4.0) y MS4 consume los eventos (MS4#3, #8). DeliveryCompleted lleva la foto y la firma desde el kernel 1.5.0 (MS5#7).
     severity: high
     blocked_by: ms4
   - id: ms5-gap-03

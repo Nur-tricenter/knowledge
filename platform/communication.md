@@ -121,7 +121,8 @@ Fuente: el código de cada repo a la fecha. La futura app visual la va a generar
 | Frontend → MS4 | REST | direcciones, reprogramar, cancelar, consultar | MS4 lo expone; frontend sin repo |
 | MS4 → MS2 | REST + service account | `GET /api/catalog/v1/meal-plans/{id}` | funcionando |
 | MS5 → MS4 | Evento | `delivery-added-to-route`, `delivery-completed`, `delivery-failed` | MS4 los consume (MS4#3, mergeado); el día se identifica con `DeliveryDayId` (kernel 1.4.0, MS5#5), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 resueltos; MS4#8). `PATCH /delivery-result` queda como vía manual |
-| MS3 → MS5 | evento | `package-validated`: un paquete aprobado por calidad, con dirección, tracking y coordenadas | MS3 publica (copia local del contrato, con el formato 1.4.0); MS5 lo consume en `main` y reenvía `DeliveryDayId` (kernel 1.4.0; X-10 resuelto) |
+| MS3 → MS5 | evento | `package-validated`: un paquete aprobado por calidad, con dirección, tracking, coordenadas, nombre y teléfono del paciente | MS3 publica (copia local del contrato, con el formato 1.5.0); MS5 lo consume en `main`, guarda nombre y teléfono y reenvía `DeliveryDayId` (kernel 1.4.0 y 1.5.0; X-10 resuelto) |
+| MS3 → MS1 | REST + service account `ms3-service` | `GET /api/clinica-nutricional/v1/Patient/{id}` | funcionando desde MS3#8 (con `Clinic__BaseUrl`); 404 si el paciente no existe (MS1#2). Es de donde sale el teléfono del repartidor |
 | Operaciones / app repartidor → MS5 | REST | repartidores, rutas, iniciar, entregar, fallar | MS5 lo expone **sin autenticación** (X-03); sin clientes en la org |
 | MS5 → ClinicService | REST directo, sin token | `POST /api/v1/patients/contact-information` | retirado en MS5#4: MS5 ya no llama a MS1; el nombre llega en `PackageValidated.PatientName` |
 | MS2 → todos | eventos | food/recipe/meal-plan (5 exchanges) | publicado; MS3 consume 3, MS4 consume 2 |
