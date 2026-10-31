@@ -108,12 +108,13 @@ Estado original en `nur-tricenter-local` (`main` 4a1d700, antes de #7):
 
 ### X-13 — MS1 no es integrable todavía
 Para entrar al stack, MS1 necesita lo que ya tienen los demás y hoy no tiene:
-- **Persistencia:** usa SQL Server con la cadena hardcodeada (`localhost\SQLEXPRESS`, la de `appsettings` se ignora). No puede usar el Postgres compartido ni tiene base en `01-create-databases.sql`.
+- **Repo:** desde 2026-10-31 está en la org (`ms1-gestion-clinica-nutricional`, un solo commit). `setup-project` de `nur-tricenter-local` todavía clona el repo viejo de `Juandcode`.
+- **Persistencia:** usa SQL Server. La cadena ya sale de `ConnectionStrings:DefaultConnection` (antes estaba hardcodeada), pero el valor por defecto sigue siendo `localhost\SQLEXPRESS` con `Trusted_Connection`. No puede usar el Postgres compartido ni tiene base en `01-create-databases.sql`.
 - **Descubrimiento:** no se registra en Consul, así que el gateway no lo rutea.
 - **Seguridad:** no valida JWT; todos sus endpoints son anónimos. No hay scopes de MS1 en el kernel.
-- **Contratos:** publica `PacientePublished` en `paciente-published` con un contrato local (no usa `Nur.Tricenter.Integration`). Ese exchange no está en la topología, y el evento tiene los campos cruzados y el `PacienteId` vacío (detalle en la [ficha](../services/ms1-clinic/gaps.md)).
+- **Contratos:** publica `PacientePublished` en `paciente-published` con un contrato local (no usa `Nur.Tricenter.Integration`). Ese exchange no está en la topología, y el evento tiene los campos cruzados y un `PacienteId` que no es el del paciente (detalle en la [ficha](../services/ms1-clinic/gaps.md), ms1-gap-04).
 - **Lo que esperan los demás:** MS5 llamaba a `POST /api/v1/patients/contact-information` (contra un mock; dejó de llamarlo en MS5#4, ver X-04) y MS4 necesita mapear `sub` → `PatientId` (X-08). MS1 no expone ni guarda ninguna de las dos cosas.
-- **Compose:** solo tiene un `docker-compose.yml` standalone con una imagen publicada; no hay `ms1.compose.yml` (X-12).
+- **Compose:** solo tiene un `docker-compose.yml` standalone con una imagen publicada; no hay `ms1.compose.yml` (X-12). El `dockerfile` sigue copiando `/GestionClinicaNutricionalService`, carpeta que no existe, y solo construye la WebApi (el worker no tiene imagen).
 
 ### X-14 — Escalada de privilegios en identity
 `POST /api/v1/users` exige `identity.user:manage` y rechaza `identity:*`, pero acepta cualquier otro scope sin validarlo, incluido `platform:*`. Al hacer login, `platform:*` se expande a todos los scopes de la plataforma. Quien tenga `identity.user:manage` puede crear un administrador completo. Además no hay endpoints para listar usuarios, revocar scopes ni desactivar cuentas, así que una cuenta creada no se puede deshabilitar sin tocar la base.

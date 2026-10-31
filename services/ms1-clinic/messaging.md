@@ -19,6 +19,8 @@
 El sobre de Joseco no tiene `EventType` (los contratos del kernel sí lo usan); el mensaje se serializa con Newtonsoft. Por eso `Paciente.Published` en [`contracts/events.yaml`](../../contracts/events.yaml) es una convención del catálogo, no un valor que viaje.
 
 ### ⚠ El payload sale mal hoy
+> Repo nuevo (2026-10-31): `PublishIntegrationEventWhenPacienteCreated` usa `PacienteId = pacienteCreated.Id`, que es el id del evento de dominio, no el del paciente. La tabla de arriba describe el mapeo previsto (`PacienteCreated.PacienteId`), no el real. Los puntos 1 y 3 siguen igual; el 2 cambia: el id ya no es vacío pero tampoco es el del paciente.
+
 1. **Campos cruzados.** `Paciente.Crear` llama `new PacienteCreated(paciente.Id, nombre, apellido, ci)`, pero el constructor es `(pacienteId, ci, nombre, apellido)`. Resultado: `CI` lleva el nombre, `Nombre` lleva el apellido y `Apellido` lleva el CI.
 2. **`PacienteId` vacío.** El evento se crea dentro de `Crear`, antes de que EF Core asigne el `Id` (al hacer `AddAsync`). Sale `00000000-0000-0000-0000-000000000000`.
 3. **Probable doble publicación.** El worker registra `PublishIntegrationEventWhenPacienteCreated` dos veces: por el escaneo de MediatR (`AddApplication`) y otra vez a mano (`AddIntegrationMessaging`). MediatR invoca cada registro, así que cada mensaje de outbox se publicaría dos veces. No verificado en ejecución.

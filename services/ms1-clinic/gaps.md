@@ -2,12 +2,12 @@
 
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
-| ms1-gap-01 | Fuera de la org y no integrado a la plataforma (sin Consul, gateway ni compose de plataforma) | high | MS1 / nur-tricenter-local | abierto (X-04, X-12) |
+| ms1-gap-01 | No integrado a la plataforma (sin Consul, gateway ni compose de plataforma); el repo ya está en la org desde 2026-10-31 | high | MS1 / nur-tricenter-local | abierto (X-04, X-12, X-13) |
 | ms1-gap-02 | Sin autenticación ni scopes; Swagger siempre expuesto | high | MS1 / identity | abierto |
 | ms1-gap-03 | No existe `POST /api/v1/patients/contact-information` que espera MS5, y `Paciente` no tiene teléfono | high | MS1 / MS5 | abierto (X-04) |
-| ms1-gap-04 | `PacientePublished` sale con `PacienteId` vacío, campos cruzados y probablemente duplicado | high | — | abierto |
+| ms1-gap-04 | `PacientePublished` sale con `PacienteId` que no es el del paciente, campos cruzados y probablemente duplicado | high | — | abierto (empeoró en el repo nuevo) |
 | ms1-gap-05 | Contrato local, exchange fuera de la topología y sin consumidores | medium | MS1 / nur-tricenter-local | abierto |
-| ms1-gap-06 | BD SQL Server cableada en el código (`ClinicaNutricional3`), no funciona en contenedor | high | — | abierto |
+| ms1-gap-06 | BD SQL Server con `Trusted_Connection` a `localhost\SQLEXPRESS` por defecto; no funciona en contenedor ni usa el Postgres de la plataforma | high | — | parcial (la cadena ya se lee de configuración) |
 | ms1-gap-07 | `Paciente` sin id de usuario de identity | medium | identity | abierto (X-08) |
 | ms1-gap-08 | Sin manejo de errores: inexistente → 500 | medium | — | abierto |
 | ms1-gap-09 | Modelo anémico, sin invariantes de negocio | medium | — | abierto |
@@ -19,7 +19,7 @@
 ## Detalle
 
 ### ms1-gap-01 — No integrado a la plataforma
-- **Qué pasa:** el repo está en `Juandcode/ClinicaNutricionalMicroservicio1`, fuera de `Nur-tricenter`. No se registra en Consul ni pasa por el gateway. `nur-tricenter-local` incluye `ms1-clinica-nutricional/ms1.compose.yml` y compila `src/ClinicaNutricional.Api` y `src/ClinicaNutricional.WorkerService`, que no existen (los proyectos están en la raíz como `GestionClinicaNutricional*`).
+- **Qué pasa:** desde 2026-10-31 el repo está en la org (`Nur-tricenter/ms1-gestion-clinica-nutricional`; antes en `Juandcode/ClinicaNutricionalMicroservicio1`, que `setup-project` de `nur-tricenter-local` todavía clona). No se registra en Consul ni pasa por el gateway. `Directory.Packages.props` declara los kernels `Nur.Tricenter.*` y `Consul`, pero ningún proyecto los referencia. `nur-tricenter-local` incluye `ms1-clinica-nutricional/ms1.compose.yml` y compila `src/ClinicaNutricional.Api` y `src/ClinicaNutricional.WorkerService`, que no existen (los proyectos están en la raíz como `GestionClinicaNutricional*`).
 - **Impacto:** `start-stack` falla en el paso de MS1 y el compose de la plataforma no levanta (X-12). Ningún servicio puede llamar al MS1 real.
 - **Qué haría falta:** mover o forkear el repo a la org; agregar `ms1.compose.yml` con API + worker en la red compartida; registro en Consul como `clinica-nutricional` con `/health`; o bien ajustar los scripts de `nur-tricenter-local` a los nombres reales.
 
@@ -33,6 +33,7 @@
 - **Qué haría falta:** agregar teléfono al `Paciente` y el endpoint (detrás del gateway, con service account de MS5), o que MS5 se alimente de `paciente-published`. Acordar un único contrato con MS3, que también simula pacientes.
 
 ### ms1-gap-04 — El evento sale corrupto
+- **Cambios en el repo nuevo (2026-10-31, verificado leyendo el código):** `PacienteCreated` quedó con un único constructor completo (para que el outbox deserialice bien), pero `Paciente.Crear` sigue pasando `(paciente.Id, nombre, apellido, ci)`, así que los campos siguen cruzados. Además `PublishIntegrationEventWhenPacienteCreated` ahora asigna `PacienteId = pacienteCreated.Id` (el id del evento de dominio) en vez de `pacienteCreated.PacienteId`: el mensaje ya no lleva `Guid.Empty`, pero tampoco el id del paciente. Por eso el gap sigue abierto. El resto del detalle de abajo describe el comportamiento previo y sigue vigente salvo ese punto.
 - **Qué pasa:** en `Paciente.Crear`, `new PacienteCreated(paciente.Id, nombre, apellido, ci)` no respeta el orden del constructor `(pacienteId, ci, nombre, apellido)`, y `paciente.Id` todavía es `Guid.Empty` (EF lo asigna después, en `AddAsync`). Además el worker registra `PublishIntegrationEventWhenPacienteCreated` dos veces (escaneo de MediatR + `AddIntegrationMessaging`), lo que probablemente publica cada mensaje dos veces (no verificado en ejecución).
 - **Impacto:** un consumidor recibiría pacientes sin id y con los datos mezclados.
 - **Qué haría falta:** asignar `Id = Guid.NewGuid()` dentro de `Crear`, pasar los argumentos en el orden correcto (o con nombre) y quitar el registro manual duplicado.
@@ -42,7 +43,8 @@
 - **Qué haría falta:** mover el contrato al kernel (con nombres en inglés, como los demás: `PatientRegistered` o similar), declarar exchange y colas de consumidores en `rabbitmq-definitions.json` y que MS3/MS5 lo consuman.
 
 ### ms1-gap-06 — Base de datos cableada
-- **Qué pasa:** `AddDbContext` usa una cadena literal (`localhost\SQLEXPRESS`, BD `ClinicaNutricional`, `Trusted_Connection`), y `DatabaseContext.OnConfiguring` la reemplaza por `ClinicaNutricional3`. `appsettings.json` no se lee. El resto de la plataforma usa PostgreSQL.
+- **Cambios en el repo nuevo:** `AddInfrastructure` lee `GetConnectionString("DefaultConnection")` (lanza si está vacía) y ya no hay `OnConfiguring`. Pero el valor por defecto de `appsettings.json` sigue siendo `Server=localhost\SQLEXPRESS;Database=ClinicaNutricional3;…;Trusted_Connection=True` y el motor sigue siendo SQL Server (`UseSqlServer`). En Docker habría que inyectar `ConnectionStrings__DefaultConnection`.
+- **Qué pasaba antes:** `AddDbContext` usaba una cadena literal (`localhost\SQLEXPRESS`, BD `ClinicaNutricional`, `Trusted_Connection`), y `DatabaseContext.OnConfiguring` la reemplazaba por `ClinicaNutricional3`. `appsettings.json` no se leía. El resto de la plataforma usa PostgreSQL.
 - **Impacto:** solo corre en una máquina Windows con SQL Express; dentro de un contenedor no hay `localhost\SQLEXPRESS` ni autenticación de Windows. Los tests de integración escriben en la misma BD de desarrollo.
 - **Qué haría falta:** leer `ConnectionStrings:DefaultConnection`, quitar `OnConfiguring` y decidir el motor (Postgres compartido, como MS2–MS5).
 
