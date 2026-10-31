@@ -10,10 +10,10 @@ Los flujos siguen el recorrido clínico de un paciente. Solo F1 cruza la fronter
   1. `Paciente.Crear` crea la entidad y levanta `PacienteCreated`.
   2. `UnitOfWork.CommitAsync` despacha el evento: `SaveInOutboxWhenPacienteCreated` lo guarda en `OutboxMessages`.
   3. Se guardan paciente y outbox en la misma transacción. Responde el `Id`.
-  4. El WorkerService lee el outbox y publica `PacientePublished` en `paciente-published`.
+  4. El WorkerService lee el outbox y publica el contrato del kernel `PatientPublished` (con el teléfono) en `paciente-published`. MS3 lo consume y guarda una copia local.
 - **Errores:** ninguno de negocio; fallos de BD → 500.
 - **Idempotencia:** ninguna. Repetir el request crea otro paciente (no hay unicidad de `CI`).
-- **Evento:** sale con el `PacienteId` real y los campos en su sitio (corregido en MS1#1, ms1-gap-04). Verificado en RabbitMQ: un solo mensaje por paciente.
+- **Evento:** sale con el `PacienteId` real y los campos en su sitio (corregido en MS1#1, ms1-gap-04), as the kernel `PatientPublished` since MS1#3 (adds `Phone`). Verificado en RabbitMQ: un solo mensaje por paciente. Only creation publishes (no update use case).
 
 ```mermaid
 sequenceDiagram
@@ -27,8 +27,8 @@ sequenceDiagram
   API->>DB: INSERT Paciente + OutboxMessages (una transacción)
   API-->>FE: 200 { value: pacienteId, isSuccess: true }
   W->>DB: lee OutboxMessages pendientes
-  W-)MQ: PacientePublished → paciente-published
-  MQ-)MQ: gestion-clinica-nutricional.default (sin consumidor)
+  W-)MQ: PatientPublished → paciente-published
+  MQ-)MQ: ms3.paciente-published (MS3 projects it) y gestion-clinica-nutricional.default (sin consumidor)
 ```
 
 ## F2 — Consulta inicial y aprobación (Frontend → MS1)
@@ -60,19 +60,17 @@ sequenceDiagram
 - **Errores:** plan inexistente → 500 al crear; lista vacía al consultar.
 
 ## F5 — Lo que la plataforma toma de MS1
-- **MS3** lee el paciente (`GET /api/v1/Patient/{id}`, por el gateway como `ms3-service`) al crear un contrato, etiquetar y liberar el paquete; de ahí sale el teléfono que viaja a MS5 en `PackageValidated.PatientPhone` (MS3#8 y #9). Un id inexistente da 404 (MS1#2).
+- **MS3** keeps a local copy of the patient (`ClinicPatients`, from `paciente-published`) and uses it to create a contract, label and release the package; the phone that travels to MS5 in `PackageValidated.PatientPhone` comes from there (MS3#9, MS3#11). It no longer calls MS1 (before MS3#11 it did `GET /api/v1/Patient/{id}` with `ms3-service`; that endpoint still answers 404 for an unknown id, MS1#2).
 - **MS5** ya no pide nada a MS1 (MS5#4): `POST /api/v1/patients/contact-information` existe pero nadie lo llama.
-- **Nadie consume `paciente-published`.** Ni MS3 ni MS5 mantienen una copia de pacientes a partir del evento.
+- **MS3 consumes `paciente-published`** (MS5 does not). No backfill: patients created before MS1#3 are not projected.
 
 ```mermaid
 sequenceDiagram
   participant MS3
-  participant GW as Gateway
   participant MS1
   participant MS5
-  MS3->>GW: GET /api/clinica-nutricional/v1/Patient/{id} (Bearer ms3-service)
-  GW->>MS1: GET /api/v1/Patient/{id}
-  MS1-->>MS3: { id, nombre, apellido, telefono, … } | 404
+  MS1-)MS3: PatientPublished (paciente-published → ms3.paciente-published)
+  MS3->>MS3: upsert ClinicPatients (name, phone)
   MS3-)MS5: package-validated { PatientName, PatientPhone }
   Note over MS1,MS5: MS5 no llama a MS1; recibe el nombre y el teléfono en el evento
 ```

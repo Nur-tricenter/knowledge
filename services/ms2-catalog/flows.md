@@ -1,6 +1,6 @@
 # Flujos — MS2
 
-El orden sigue el ciclo de vida del catálogo. F4 y F5 cruzan la frontera del servicio.
+El orden sigue el ciclo de vida del catálogo. F4 y F5 cruzan la frontera del servicio (by messaging: there is no REST between services).
 
 ## F1 — Crear un alimento → `food-published`
 
@@ -68,7 +68,7 @@ sequenceDiagram
   4. El worker proyecta el plan al read model y publica `meal-plan-published` con `PlanId`, `Name`, `DurationType`, `TotalDays`, `MealsPerDay`.
 - **Errores:** 400 si la duración es inválida, el nombre vacío o el token no trae `sub` válido.
 - **Idempotencia:** no.
-- **Composición posterior:** los meal times y las asignaciones de recetas se agregan con `POST /meal-plans/meal-times` y `POST /meal-plans/assign-recipes`, que disparan `MealTimeAddedToPlan` y `RecipeAssignedToMealTime` (internos, proyectados al read model, sin evento de integración).
+- **Composición posterior:** los meal times y las asignaciones de recetas se agregan con `POST /meal-plans/meal-times` y `POST /meal-plans/assign-recipes` (y se quitan con `DELETE …/recipes/{recipeId}`), que disparan `MealTimeAddedToPlan`, `RecipeAssignedToMealTime` y `RecipeRemovedFromMealTime`. Each one is projected to the read model **and** published as `meal-plan-composition-changed`, a full snapshot of the plan (F5).
 
 ```mermaid
 sequenceDiagram
@@ -111,43 +111,42 @@ sequenceDiagram
   W->>DB: commit (inbox + proyección)
 ```
 
-## F5 — MS4 resuelve el menú de mañana (MS4 → MS2, cross-boundary)
+## F5 — A composition change reaches MS4 (MS2 → MS4, asynchronous)
 
-- **Actor:** operaciones (disparo manual; no hay cron).
-- **Disparador:** `POST /resolve-daily-catalog` en MS4 (fuera del alcance de MS2, pero MS2 es el proveedor).
-- **Camino feliz (lado MS2):**
-  1. MS4 pide a identity un token de la service account `ms4-service` (scope `catalog.mealPlan:read`).
-  2. Por cada plan distinto entre los días `Scheduled` de mañana, MS4 llama `GET /api/catalog/v1/meal-plans/{planId}`.
-  3. MS2 valida el JWT y el scope, y devuelve la composición completa desde el read model (plan → días → tiempos de comida → recetas con ración → ingredientes con porción).
-  4. MS4 selecciona el `PlanDay` cuyo `DayNumber` coincide con el del `DeliveryDay`, aplana los tiempos de comida y las recetas en `MenuItem` y descarta las de 0 raciones.
-- **Si falla:** MS4 omite el día (queda en `Scheduled`) y sigue con el resto; se recupera re-ejecutando el job (idempotente).
-- **Por qué no se resuelve bajo demanda:** MS4 resuelve **antes** de que MS3 consulte `active-tomorrow`, así una caída de MS2 no tumba la consulta de MS3.
+- **Actor:** authenticated frontend/admin (composes the plan); MS4 as the consumer.
+- **Disparador:** `POST /meal-plans/meal-times`, `POST /meal-plans/assign-recipes` or `DELETE /meal-plans/{mealPlanId}/meal-times/{mealTimeId}/recipes/{recipeId}`.
+- **Camino feliz (MS2 side):**
+  1. The command saves the change in `write.*` and the domain event (`MealTimeAddedToPlan`, `RecipeAssignedToMealTime` or `RecipeRemovedFromMealTime`) in `outbox.outboxMessage`, in the same transaction.
+  2. The worker drains the row, projects it to the read model and calls `PublishIntegrationEventWhenMealPlanCompositionChanged`.
+  3. The publisher reloads the plan **from the write side** (with its recipe names) and builds `MealPlanCompositionChanged`: every day, meal time and recipe with its rations.
+  4. It publishes to the `meal-plan-composition-changed` exchange (fanout), which routes to `ms4.meal-plan-composition-changed`.
+- **MS4 side:** `MealPlanCompositionChangedConsumer` upserts one `PlanDayMenus` row per day (an older snapshot, by `CreatedAt`, never overwrites a newer one). The `resolve-daily-catalog` job reads the menus from there: **no HTTP call to MS2, no service account.**
+- **Errores:** if the plan no longer exists when the row is drained, a warning is logged and nothing is published. A publish failure leaves the row pending and it is retried (at-least-once).
+- **Idempotencia:** yes, by nature: the message is a full snapshot, so a redelivery or an out-of-order message converges on the latest by `CreatedAt`.
+- **Consistencia:** eventual. **One message per change** (many while a plan is being composed, ms2-gap-13) and **no backfill**: a plan composed before the deploy has no menu in MS4 until it is touched again (X-15).
 
 ```mermaid
 sequenceDiagram
-  participant OPS as Operaciones
-  participant MS4
-  participant ID as Identity
-  participant GW as Gateway
-  participant MS2
-  OPS->>MS4: POST /resolve-daily-catalog
-  MS4->>GW: POST /api/identity-service/v1/auth/login (ms4-service)
-  GW->>ID: POST /api/v1/auth/login
-  ID-->>MS4: { accessToken, expiresIn }
-  loop por cada plan distinto
-    MS4->>GW: GET /api/catalog/v1/meal-plans/{planId} + Bearer
-    GW->>MS2: GET /api/v1/meal-plans/{planId}
-    MS2->>MS2: valida JWT + scope catalog.mealPlan:read
-    MS2-->>MS4: 200 composición
-  end
-  MS4->>MS4: días → ReadyForProduction, consolida orden
-  MS4-->>OPS: 204
+  participant C as Cliente
+  participant API as Catalog WebApi
+  participant DB as Postgres (write+outbox)
+  participant W as WorkerService
+  participant MQ as RabbitMQ
+  participant MS4 as MS4 Calendario
+  C->>API: POST /api/v1/meal-plans/assign-recipes
+  API->>DB: SaveChanges (assignment + outbox, same tx)
+  W->>DB: drain outbox, project read model
+  W->>DB: reload plan and recipes (write side)
+  W->>MQ: publish MealPlanCompositionChanged (full snapshot)
+  MQ->>MS4: ms4.meal-plan-composition-changed
+  MS4->>MS4: upsert PlanDayMenus
+  Note over MS4: resolve-daily-catalog reads PlanDayMenus, no HTTP
 ```
 
 ## F6 — Drenaje del outbox y proyección (interna)
 
 - **Actor:** `catalog-workerservice`.
-- **Disparador:** fila en `outbox.outboxMessage` (producida por F1/F2/F3).
+- **Disparador:** fila en `outbox.outboxMessage` (produced by F1/F2/F3 and by the composition changes of F5).
 - **Camino feliz:**
   1. `OutboxProcessor<DomainEvent>` lee la fila.
   2. MediatR despacha `OutboxMessage<T>` al handler de proyección (`Project*`), que actualiza `StoredDbContext`.

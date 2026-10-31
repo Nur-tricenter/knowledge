@@ -34,24 +34,25 @@ sequenceDiagram
   end
 ```
 
-## F2 — Contratar y pagar un plan → calendario en MS4 (MS3 → MS4)
+## F2 — Contratar y pagar un plan → evento `contract-activated` → calendario en MS4 (MS3 → MS4)
 - **Actor:** paciente desde el frontend.
 - **Disparador:** `POST /contracts` y luego `POST /billing/charge-plan`.
-- **Precondición:** el plan existe en `CatalogPlans` (F1) o en la simulación; el paciente existe en MS1 (o es uno de los 3 simulados si `Clinic__BaseUrl` no está configurado).
+- **Precondición:** el plan existe en `CatalogPlans` (F1) o en la simulación; el paciente existe en `ClinicPatients` (projection of MS1's `paciente-published`; standalone, one of the 3 simulated). A patient MS1 published before the deploy is unknown (no backfill, X-15).
 - **Camino feliz:**
   1. `POST /contracts` crea el contrato `PendingPayment` (201).
   2. `POST /billing/charge-plan` crea la factura, activa el contrato y guarda en el outbox la fila `CreateSchedule` con `durationDays` (días del plan) y `startDate` (día siguiente). Responde 200.
-  3. El worker toma la fila, inicia sesión como `ms3-service` y llama a `POST /schedule` de MS4 con `{ contractId, patientId, planId, duration, startDate }`.
-  4. MS4 crea el calendario `Active` con N días `Pending`. MS3 marca la fila `Published`.
+  3. The worker (`OutboxRelay`) takes the row and publishes `ContractActivated` `{ ContractId, PatientId, CatalogPlanId, DurationDays, StartDate }` to `contract-activated`, with the row id as the message id. MS3 marks the row `Published`.
+  4. MS4 consumes it from `ms4.contract-activated` and sends `CreateScheduleCommand`: it creates the `Active` calendar with N `Pending` days (idempotent by `ContractId`).
 - **Errores:**
   | Situación | Resultado |
   |---|---|
   | Plan o paciente desconocido | 404 al contratar |
-  | MS4 responde 400/422 (duración ≠ 15/30) | Fila `Rejected`; el contrato **queda activo y pagado** sin calendario |
-  | MS4 o identity caídos | Fila pendiente; el pago respondió 200 igual; se reintenta cada 5 s y se completa solo |
+  | MS4 rejects the data (duration ≠ 15/30, or a duration that contradicts the plan) | MS4 logs it and acknowledges the message; MS3 does not learn about it: the contract **stays active and paid** without a calendar (`ms3-gap-06`) |
+  | Payload without `durationDays` (unknown plan) | Row `Rejected`, never published; same result for the contract |
+  | Broker or MS4 down | Row pending (the payment answered 200 anyway); retried every 5 s, or MS4 consumes it when it is back, and it completes on its own |
   | Pagar dos veces | 500 la segunda vez (el dominio lo prohíbe, pero no se mapea) |
   | El API cae entre guardar el pago y guardar la fila | Contrato pagado sin fila `CreateSchedule`: el calendario nunca se pide (`ms3-gap-11`) |
-- **Idempotencia / reintentos:** `POST /schedule` es idempotente por `contractId` en MS4; un reintento de MS3 no crea un segundo calendario.
+- **Idempotencia / reintentos:** the message id is the outbox row id, so a redelivery after a lost ack is dropped by MS4's inbox, and `CreateScheduleCommand` is idempotent by `contractId`: neither creates a second calendar.
 
 ```mermaid
 sequenceDiagram
@@ -59,7 +60,7 @@ sequenceDiagram
   participant GW as Gateway
   participant MS3
   participant W as MS3 Worker
-  participant ID as Identity
+  participant MQ as RabbitMQ
   participant MS4
   P->>GW: POST /api/contracting/v1/billing/charge-plan
   GW->>MS3: POST /api/v1/billing/charge-plan
@@ -67,41 +68,43 @@ sequenceDiagram
   MS3->>MS3: CommitAsync fila CreateSchedule (no atómico)
   MS3-->>P: 200 processed
   W->>MS3: lee fila pendiente
-  W->>ID: login ms3-service
-  W->>MS4: POST /schedule (Bearer)
-  MS4-->>W: 200 { calendarId }
+  W-)MQ: ContractActivated (contract-activated)
   W->>MS3: fila = Published
+  MQ-)MS4: ms4.contract-activated
+  MS4->>MS4: CreateScheduleCommand (idempotente por contractId)
 ```
 
-## F3 — Producir: la orden diaria sale del menú de MS4 (MS3 ↔ MS4)
+## F3 — Producir: la orden diaria sale de la orden que MS4 publicó (`production-order-ready`)
 - **Actor:** cocina / operaciones.
 - **Disparador:** `GET /production/daily-order?productionDate=`
-- **Precondición:** MS4 corrió `resolve-daily-catalog` para esa fecha; los días tienen dirección.
+- **Precondición:** MS4 corrió `resolve-daily-catalog` para esa fecha (los días tienen dirección) y MS3 ya recibió el `ProductionOrderReady` de esa fecha (`ScheduledDeliveries`).
 - **Camino feliz:**
-  1. MS3 busca una orden ya creada para la fecha; si existe, la devuelve sin consultar a MS4.
-  2. Si no, pide `active-tomorrow?date=` a MS4 como `ms3-service`.
-  3. Por cada entrega suma las raciones de cada receta de su `menu`, con el nombre que vino de MS4.
+  1. MS3 busca una orden ya creada para la fecha; si existe, la devuelve.
+  2. Si no, lee las entregas de esa fecha de su proyección `ScheduledDeliveries` (no llama a MS4).
+  3. Por cada entrega suma las raciones de cada receta de su `menu`, con el nombre que vino en el evento.
   4. Crea la `DailyProductionOrder` y devuelve las recetas con su total de porciones.
 - **Errores:**
   | Situación | Resultado |
   |---|---|
-  | MS4 devuelve `[]` (job no corrido, o sin direcciones) | 404 `NO_CALENDARS` |
+  | No `ProductionOrderReady` received for that date (job not run, no addresses, or the event has not arrived yet) | 404 `NO_CALENDARS` |
   | Las entregas no traen `menu` y el plan no tiene estructura simulada | 422 `NO_RECIPES`, sin crear la orden |
-  | MS4 caído o rechaza el token | 500 |
+  | MS4 caído | no effect: MS3 answers from the last order MS4 published (no "MS4 outage" error exists any more) |
 - **Idempotencia:** por fecha; llamar de nuevo devuelve la misma orden.
-- **Nota:** `menu` es un campo nuevo que MS3 propone a MS4 (rama `feat/active-tomorrow-menu` de MS4, sin PR; `main` de MS4 no lo devuelve). Sin él, solo funciona con los planes simulados.
+- **Note:** every `resolve-daily-catalog` run publishes a new full snapshot; MS3 replaces its rows for that date (an older snapshot is ignored), so a day made ready later enters the projection, but not an order MS3 already created for the date (`ms3-gap-14`).
 
 ```mermaid
 sequenceDiagram
   actor K as Cocina
   participant MS3
+  participant MQ as RabbitMQ
   participant MS4
+  MS4-)MQ: ProductionOrderReady (production-order-ready), after resolve-daily-catalog
+  MQ-)MS3: ms3.production-order-ready -> replaces ScheduledDeliveries of the date
   K->>MS3: GET /production/daily-order?productionDate=2026-10-25
   alt ya existe la orden
     MS3-->>K: 200 (la guardada)
   else
-    MS3->>MS4: GET /calendars/active-tomorrow?date=2026-10-25 (Bearer)
-    MS4-->>MS3: [ { packId, address, lat, long, menu[…] } ]
+    MS3->>MS3: lee ScheduledDeliveries (address, lat, long, menu[…])
     MS3->>MS3: suma raciones por receta; crea DailyProductionOrder
     MS3-->>K: 200 { recipesSummary[…] }
   end
@@ -113,7 +116,7 @@ sequenceDiagram
 - **Precondición:** el paquete pasó `assemble` y `label`.
 - **Camino feliz:**
   1. MS3 recorre los paquetes de la orden y llama a `ApproveQualityControl` en cada uno.
-  2. Por cada uno guarda el paquete y, en un segundo `CommitAsync`, la fila `TransferToLogistics` con dirección, tracking y coordenadas (estas, desde el calendario de MS4 de mañana).
+  2. Por cada uno guarda el paquete y, en un segundo `CommitAsync`, la fila `TransferToLogistics` con dirección, tracking y coordenadas (estas, de las entregas de mañana proyectadas en `ScheduledDeliveries`) y el teléfono del paciente (de `ClinicPatients`).
   3. El worker publica `PackageValidated` en el exchange `package-validated`; llega a `ms5.package-validated`.
 - **Errores:**
   | Situación | Resultado |

@@ -3,22 +3,26 @@
 ## Eventos publicados
 | Exchange | Contrato | EventType | Se dispara cuando | Outbox |
 |---|---|---|---|---|
-| `paciente-published` | `PacientePublished` (**local**, `GestionClinicaNutricional.Application.Contracts`) | sin campo en el mensaje; en el catálogo se registra como `Paciente.Published` | Se registra un paciente (`POST …/CreatePaciente`) | sí |
+| `paciente-published` | `PatientPublished` (kernel `Nur.Tricenter.Integration.Messages.Clinic`, 1.6.0) | `Patient.Published` | Se registra un paciente (`POST …/CreatePaciente`) | sí |
 
-**Este exchange no está en la topología de la plataforma** (`nur-tricenter-local/topology/rabbitmq-definitions.json`) y nadie lo consume. Lo declara el propio MS1.
+The exchange and the queue `ms3.paciente-published` are in the platform topology (nur-tricenter-local); MS1's worker also declares the exchange itself. **MS3 consumes it** (`ms3.paciente-published`, `PatientPublishedConsumer`) into its `ClinicPatients` projection, which replaced MS3's REST call `GET /Patient/{id}`.
 
-### Contrato
-`PacientePublished : IntegrationMessage` (Joseco), definido **dentro de MS1**, no en el kernel `Nur.Tricenter.Integration`:
+### Contrato (MS1#3)
+`PatientPublished : IntegrationMessageContract` comes from the kernel (`Nur.Tricenter.Integration` 1.6.0); MS1 **deleted** its local `PacientePublished` (`Application/Contracts/PacientePublished.cs`) and now references the kernel package. It is a **full snapshot**: consumers upsert by `PatientId`.
 
 | Campo | Origen |
 |---|---|
-| `Id`, `CorrelationId`, `Source`, `CreatedAt` | Sobre de Joseco. `Source` = `gestion-clinica-nutricional`; `CorrelationId` = el del mensaje de outbox |
-| `PacienteId` | `PacienteCreated.PacienteId` |
-| `CI`, `Nombre`, `Apellido` | `PacienteCreated` |
+| `Id`, `CreatedAt`, `CorrelationId`, `Source`, `EventType` | Kernel envelope. `Source` = `gestion-clinica-nutricional`; `CorrelationId` = el del mensaje de outbox; `EventType` = `Patient.Published` (the old local contract had none) |
+| `PatientId` | `PacienteCreated.PacienteId` |
+| `DocumentNumber` | `PacienteCreated.CI` |
+| `FirstName`, `LastName` | `PacienteCreated.Nombre`, `PacienteCreated.Apellido` |
+| `Phone` (`string?`) | `PacienteCreated.Telefono` (new, optional; `null` when the clinic has none) |
 
-El sobre de Joseco no tiene `EventType` (los contratos del kernel sí lo usan); el mensaje se serializa con Newtonsoft. Por eso `Paciente.Published` en [`contracts/events.yaml`](../../contracts/events.yaml) es una convención del catálogo, no un valor que viaje.
+`PacienteCreated` gained an optional `telefono` constructor argument so outbox rows written before it existed still deserialize (the missing member becomes `null`). It keeps a single full constructor on purpose: a parameterless one reintroduces silent field mix-ups.
 
-### Payload (corregido en MS1#1, 2026-10-31)
+**Only creation publishes:** MS1 has no patient-update use case, so a patient changed later is not re-published. If one is added, it should publish the same `PatientPublished` (the consumer upserts). **No backfill:** a patient created before MS1#3 was deployed has no message, so MS3 does not know it (X-15).
+
+### Payload (corregido en MS1#1, 2026-10-31; sigue vigente con el contrato del kernel de MS1#3)
 > Verificado en RabbitMQ con un paciente real: el mensaje lleva el `PacienteId` del paciente y `CI`/`Nombre`/`Apellido` en su campo, y llegó **un solo** mensaje (la posible doble publicación no se reprodujo). Lo de abajo es el defecto original, que ya no ocurre.
 
 1. **Campos cruzados.** `Paciente.Crear` llama `new PacienteCreated(paciente.Id, nombre, apellido, ci)`, pero el constructor es `(pacienteId, ci, nombre, apellido)`. Resultado: `CI` lleva el nombre, `Nombre` lleva el apellido y `Apellido` lleva el CI.
@@ -38,7 +42,7 @@ La topología crea 7 colas para MS1 que nadie lee y acumulan mensajes (gap trans
 
 ## Garantías de entrega
 - **Publicación:** outbox transaccional de Joseco. `UnitOfWork.CommitAsync` despacha `PacienteCreated` con MediatR, `SaveInOutboxWhenPacienteCreated` lo agrega a `OutboxMessages` y todo se guarda en un único `SaveChangesAsync`. El WorkerService (`AddOutboxBackgroundService<DomainEvent>`) lee la tabla y publica con `IExternalPublisher.PublishAsync(message, "paciente-published", declareDestination: true)`.
-- **Topología propia:** `DefaultQueueRegistrar` (worker) declara el exchange `paciente-published` (fanout, no durable) y la cola sumidero **`gestion-clinica-nutricional.default`** (durable), y las enlaza. Reintenta cada 10 s si RabbitMQ no está. Nadie consume esa cola.
+- **Topología propia:** `DefaultQueueRegistrar` (worker) declara el exchange `paciente-published` (fanout, no durable) y la cola sumidero **`gestion-clinica-nutricional.default`** (durable), y las enlaza. Reintenta cada 10 s si RabbitMQ no está. Nadie consume esa cola. The platform topology declares the same exchange plus `ms3.paciente-published` (the real consumer).
 - **Configuración:** el worker lee `RabbitMqSettings` (host `localhost`, sin puerto, por lo que usa 5672). La sección `Joseco:Communication:External:RabbitMQ` de la WebApi no se usa.
 - **Consumo:** no aplica.
 - **Trazabilidad:** solo Serilog con `Enrich.WithSpan()` en el worker. La observabilidad del kernel (`Nur.Tricenter.Observability`) está comentada.
@@ -48,7 +52,8 @@ La topología crea 7 colas para MS1 que nadie lee y acumulan mensajes (gap trans
 flowchart LR
   API[WebApi<br/>CreatePacienteHandler] -- "PacienteCreated<br/>(MediatR)" --> OB[(OutboxMessages<br/>SQL Server)]
   OB --> W[WorkerService<br/>outbox background service]
-  W -. "PacientePublished" .-> X{{paciente-published<br/>fuera de la topología}}
+  W -. "PatientPublished (kernel 1.6.0)" .-> X{{paciente-published}}
+  X -.-> QM[(ms3.paciente-published)] -.-> MS3[MS3: ClinicPatients]
   X -.-> Q[(gestion-clinica-nutricional.default<br/>sin consumidor)]
   T[Topología de la plataforma] --> Q1[(ms1.* x7<br/>sin consumidor)]
 ```

@@ -39,18 +39,20 @@ Formato: `{servicio}.{recurso}:{acción}`.
 - Las tablas ruta→scope del kernel son documentales: ningún servicio ni el gateway las leen en runtime.
 
 ## Service accounts
-Usuarios técnicos para las llamadas servicio → servicio, con **mínimo privilegio**.
+Technical users with **least privilege**. They used to authenticate the service → service REST calls; **no service uses them any more** because those calls became events (MS3 → MS4 `POST /schedule` and `GET active-tomorrow` → `contract-activated` and `production-order-ready`; MS3 → MS1 `GET Patient/{id}` → `paciente-published`; MS4 → MS2 `GET meal-plans/{id}` → `meal-plan-composition-changed`). The accounts are kept in identity because the demo console's security view still shows them; nothing in MS3 or MS4 logs in with them (their `Identity`/`Clinic`/`DeliveryCalendar`/`Catalog` HTTP options and token handlers were deleted).
 
-| Cuenta | Usada por | Scopes | Para |
+| Account | Used by | Scopes | Was for |
 |---|---|---|---|
-| `ms4-service` | MS4 | `catalog.mealPlan:read` | Leer la composición del plan en MS2 |
-| `ms3-service` | MS3 | `deliveryCalendar.calendar:create`, `deliveryCalendar.productionOrder:read` | Crear el calendario de un contrato y leer la orden de producción en MS4 |
+| `ms4-service` | nobody (kept for the demo console) | `catalog.mealPlan:read` | Reading the plan composition in MS2 |
+| `ms3-service` | nobody (kept for the demo console) | `deliveryCalendar.calendar:create`, `deliveryCalendar.productionOrder:read` | Creating a contract's calendar and reading the production order in MS4 |
 
-MS5 **no tiene service account**: ya no hace llamadas salientes (dejó de llamar al ClinicService en MS5#4), y no llama a MS4 (el cierre del ciclo va por eventos que MS4 consume). Si se prefiriera cerrar X-01 por REST, haría falta `ms5-service` con el scope `deliveryCalendar.deliveryResult:edit`.
+Events carry no user identity: there is no token check on a message, so the consumers trust whatever reaches their queue (the broker is the trust boundary; credentials are the `guest` development ones).
+
+MS5 **has no service account**: it makes no outbound calls and does not call MS4 (the cycle is closed by events MS4 consumes). If X-01 were closed over REST instead, `ms5-service` with the scope `deliveryCalendar.deliveryResult:edit` would be needed.
 
 Las crea `nur-tricenter-local/scripts/start-stack.*` después de levantar el stack: login como admin y `POST /api/identity-service/v1/users` (409 = ya existe). Cuando identity estaba fuera del compose (X-12, resuelto en nur-tricenter-local#7), este paso fallaba.
 
-Cuando agregues una service account, documéntala aquí, en `start-stack.*` y en el `service.yaml` (`sync_calls[].auth: service-account:<cuenta>`).
+If a service account is ever used again, document it here, en `start-stack.*` y en el `service.yaml` (`sync_calls[].auth: service-account:<cuenta>`).
 
 ## Endpoints anónimos
 `/health` de cada servicio (Consul lo usa como health check; MS4 expone además `/alive`). `POST /auth/login` de identity. **Todos** los endpoints de MS3 (X-11) y de MS1. **Todos** los endpoints de MS5 (`/api/v1/couriers`, `/routes`, `/packages/deliveries`, `…/route/today`, `…/start`, `…/deliver`, `…/fail`), también a través del gateway.

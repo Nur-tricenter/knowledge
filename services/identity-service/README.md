@@ -24,8 +24,7 @@ Identity convierte un usuario y una contraseña en un **JWT con los permisos (sc
 ## Actores y vecinos
 | Actor / servicio | Dirección | Mecanismo | Para qué |
 |---|---|---|---|
-| MS4 Calendario | entrante | REST vía gateway | Login de la service account `ms4-service` |
-| MS3 Contratación | entrante | REST vía gateway | Login de la service account `ms3-service` |
+| MS4 Calendario, MS3 Contratación | — | — | They no longer log in (MS4#12, MS3#11: no outbound HTTP); `ms4-service` / `ms3-service` remain only for the demo console's security view |
 | Operaciones (`start-stack.*`, personas con Postman/Swagger) | entrante | REST vía gateway | Login del `admin`; crear `ms3-service` y `ms4-service` |
 | Consul | entrante | HTTP `/health` cada 10 s | Health check de la instancia registrada |
 | Consul | saliente | Auto-registro como `identity-service` | Que el gateway lo encuentre |
@@ -36,8 +35,6 @@ Identity convierte un usuario y una contraseña en un **JWT con los permisos (sc
 ## Mapa de comunicación
 ```mermaid
 flowchart LR
-  MS4[MS4 Calendario] -- "POST /auth/login<br/>ms4-service" --> GW[Gateway]
-  MS3[MS3 Contratación] -- "POST /auth/login<br/>ms3-service" --> GW
   OPS[Operaciones<br/>start-stack] -- "POST /auth/login (admin)<br/>POST /users" --> GW
   GW -- "/api/identity-service/** → /api/**" --> ID((Identity<br/>API))
   ID -- outbox --> W[Identity<br/>WorkerService]

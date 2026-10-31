@@ -1,4 +1,4 @@
-# Ficha estructurada de MS3. Fuente: código de Nur-tricenter/ms3-contract-and-production (2026-10-24; revisado contra main 4cc8864 el 2026-10-28).
+# Ficha estructurada de MS3. Fuente: código de Nur-tricenter/ms3-contract-and-production (2026-10-24; revisado contra main 4cc8864 el 2026-10-28; actualizado el 2026-10-31 a MS3#11: sin REST saliente, proyecciones por eventos).
 
 id: ms3
 name: Contratación y producción (Contracting & Production)
@@ -8,8 +8,8 @@ owner:
 repo: Nur-tricenter/ms3-contract-and-production
 status: complete
 summary: >-
-  Registra el contrato de un paciente con un plan y su cobro, pide a MS4 el calendario de entregas,
-  arma la orden de producción diaria con el menú de MS4 y lleva cada paquete por armado, etiqueta y
+  Registra el contrato de un paciente con un plan y su cobro, avisa a MS4 con el evento contract-activated para que cree el calendario,
+  arma la orden de producción diaria con el menú de la orden que MS4 publica (production-order-ready) y lleva cada paquete por armado, etiqueta y
   control de calidad hasta avisar a logística.
 stack: [.NET 8 (net8.0), FastEndpoints 5.35.0, MediatR 12.4.1, EF Core 8.0.11, PostgreSQL (Npgsql 8.0.11), Joseco.DDD.Core 1.0.2, RabbitMQ (Joseco.Communication.External.RabbitMQ 1.1.0), Consul 1.7.14.7]
 
@@ -32,7 +32,7 @@ aggregates:
     description: Entrega física en producción. Flujo estrictamente secuencial con etiqueta y validación de calidad.
     states: [Pending, Assembled, Labeled, Validated]
   - name: OutgoingIntegrationEvent
-    description: Fila del outbox con el mensaje pendiente hacia MS4 o MS5.
+    description: Outbox row with the pending message to MS4 (contract-activated) or MS5 (package-validated).
     states: [Simulated, Published, Rejected, Unroutable]
 
 endpoints:
@@ -130,13 +130,13 @@ endpoints:
     path: /api/v1/sim/calendars/active-tomorrow
     scope: null
     callers: [ops]
-    summary: Calendarios activos de mañana (reales de MS4 si está configurado; simulados si no).
+    summary: Next-day deliveries from the ScheduledDeliveries projection of MS4's production-order-ready (with Projections__Enabled=true; simulated standalone). Not a call to MS4.
     idempotent: true
   - method: GET
     path: /api/v1/sim/outgoing/{eventType}
     scope: null
     callers: [ops]
-    summary: Filas del outbox por tipo (CreateSchedule, TransferToLogistics) con su estado.
+    summary: Outbox rows by type (CreateSchedule, published as contract-activated; TransferToLogistics) with their state.
     idempotent: true
   - method: GET
     path: /health
@@ -145,34 +145,21 @@ endpoints:
     summary: Health check anónimo que usa Consul; comprueba la conexión a la BD.
     idempotent: true
 
-sync_calls:
-  - target: ms4
-    method: POST
-    path: /api/delivery-calendar/v1/schedule
-    via: gateway
-    auth: service-account:ms3-service
-    purpose: Crear el calendario de entregas del contrato pagado, con la duración del plan y el día siguiente como inicio. Sale del outbox.
-    on_failure: 400/422 deja la fila Rejected (sin reintento); 401, 5xx o red caída la dejan pendiente y se reintenta cada 5 s. El pago ya respondió 200.
-  - target: ms4
-    method: GET
-    path: /api/delivery-calendar/v1/calendars/active-tomorrow
-    via: gateway
-    auth: service-account:ms3-service
-    purpose: Obtener las entregas del día con su dirección, coordenadas y menú para armar la orden de producción.
-    on_failure: Si MS4 no responde, la orden diaria da 500 y no se crea nada. Si devuelve [], 404 NO_CALENDARS.
-  - target: identity
-    method: POST
-    path: /api/identity-service/v1/auth/login
-    via: gateway
-    auth: none
-    purpose: Obtener el JWT de la service account ms3-service (scopes deliveryCalendar.calendar:create y deliveryCalendar.productionOrder:read). Se cachea hasta 60 s antes de vencer.
-    on_failure: Si MS4 responde 401 a un GET se renueva el token una vez. Si el login falla, la llamada a MS4 falla y la fila del outbox queda pendiente.
+sync_calls: []
+# MS3 makes no outbound HTTP since MS3#11. The former calls became events: POST /schedule and
+# GET active-tomorrow (MS4) -> contract-activated / production-order-ready; GET Patient/{id} (MS1) ->
+# paciente-published; the ms3-service login is no longer needed.
 
 events_published:
   - exchange: package-validated
     contract: PackageValidated
     event_type: Package.Validated
     trigger: El control de calidad aprueba un paquete (POST /production/packages/validate). Un evento por paquete.
+    outbox: true
+  - exchange: contract-activated
+    contract: ContractActivated
+    event_type: Contract.Activated
+    trigger: A contract is paid (POST /billing/charge-plan). The CreateSchedule outbox row is published by OutboxRelay (message id = row id). MS4 creates the delivery calendar. Local copy of the kernel 1.6.0 contract.
     outbox: true
 
 events_consumed:
@@ -194,6 +181,18 @@ events_consumed:
     handler: RecipeUpdatedConsumer
     effect: Actualiza nombre e instrucciones de la receta en CatalogRecipes.
     idempotent: true
+  - queue: ms3.production-order-ready
+    exchange: production-order-ready
+    contract: ProductionOrderReady
+    handler: ProductionOrderReadyConsumer
+    effect: Replaces the ScheduledDeliveries rows of the order's DeliveryDate with the snapshot (older snapshot ignored). The daily order, the label and the validation read it instead of calling MS4.
+    idempotent: true
+  - queue: ms3.paciente-published
+    exchange: paciente-published
+    contract: PatientPublished
+    handler: PatientPublishedConsumer
+    effect: Upserts the ClinicPatients projection (id, full name, phone; older snapshot ignored). Contract creation, the label and the package release read it instead of calling MS1.
+    idempotent: true
 
 gaps:
   - id: ms3-gap-01
@@ -201,7 +200,7 @@ gaps:
     severity: high
     blocked_by: identity
   - id: ms3-gap-02
-    summary: Resuelto (MS3#8, MS1#2). MS3 lee los pacientes de MS1 con Clinic__BaseUrl; sin ella siguen los 3 simulados.
+    summary: Resuelto (MS3#8, MS1#2) y luego reemplazado por una proyección de paciente-published (MS3#11, MS1#3). Standalone siguen los 3 simulados.
     severity: high
     blocked_by: ms1
   - id: ms3-gap-03
@@ -212,14 +211,14 @@ gaps:
     summary: Los errores de dominio devuelven 500 y validate deja el lote a medias si un paquete falla.
     severity: medium
   - id: ms3-gap-05
-    summary: MS3 no referencia ningún paquete Nur.Tricenter.*; los contratos de MS3 y del catálogo son copias locales; la de PackageValidated sigue el formato del kernel 1.4.0 (MS3#5, #6).
+    summary: MS3 no referencia ningún paquete Nur.Tricenter.*; los contratos de MS3 y del catálogo son copias locales (also ContractActivated, ProductionOrderReady, PatientPublished, same wire shape as kernel 1.6.0); la de PackageValidated sigue el formato del kernel 1.5.0.
     severity: medium
   - id: ms3-gap-06
-    summary: Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario.
+    summary: If MS4 rejects the calendar data it logs and acks the contract-activated message (MS3#11, MS4#12); the contract stays paid without a calendar and MS3 gets no signal.
     severity: medium
     blocked_by: ms4
   - id: ms3-gap-07
-    summary: Resuelto. MS4 devuelve el campo menu de active-tomorrow en main (MS4#4) y MS3 arma la orden desde ahí.
+    summary: Resuelto. El menu de cada entrega llega dentro de ProductionOrderReady (MS4#12) y MS3 arma la orden desde ScheduledDeliveries.
     severity: medium
     blocked_by: ms4
   - id: ms3-gap-08
@@ -243,7 +242,7 @@ gaps:
     summary: El seed corre en la plataforma y crea una orden de producción falsa para mañana con paquetes sin día en MS4 (PR MS3#4).
     severity: high
   - id: ms3-gap-14
-    summary: daily-order devuelve la orden ya creada sin volver a consultar active-tomorrow; los días listos después quedan fuera del resumen.
+    summary: daily-order devuelve la orden ya creada sin releer ScheduledDeliveries; los días listos después quedan fuera del resumen.
     severity: medium
     blocked_by: ms4
   - id: ms3-gap-15
@@ -255,3 +254,7 @@ gaps:
   - id: ms3-gap-17
     summary: GET daily-order agrega la orden pero nunca hace commit; cada llamada devuelve un productionOrderId nuevo que no existe en la base.
     severity: medium
+  - id: ms3-gap-18
+    summary: The ClinicPatients and ScheduledDeliveries projections have no backfill; patients and production orders published before the deploy are unknown to MS3 (X-15).
+    severity: low
+    blocked_by: ms1

@@ -3,11 +3,11 @@
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
 | ms3-gap-01 | Sin autenticación ni scopes: todos los endpoints son anónimos | high | kernels, identity | abierto (X-11) |
-| ms3-gap-02 | Los pacientes (MS1) son 3 simulados | high | MS1 | resuelto (MS3#8, MS1#2) |
+| ms3-gap-02 | Los pacientes (MS1) son 3 simulados | high | MS1 | resuelto (MS3#8, MS1#2); reemplazado por una proyección de `paciente-published` (MS3#11, MS1#3, kernel 1.6.0) |
 | ms3-gap-03 | `PackageValidated` no trae el `packId` de MS4 ni el tipo de `PatientId` que usa MS5 | high | MS5, MS4 | `packId` resuelto (MS3#6, kernel 1.4.0); falta alinear el tipo de `PatientId` (X-10, X-01) |
 | ms3-gap-04 | Errores de dominio devuelven 500 y la validación del lote es parcial | medium | — | abierto |
-| ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales | medium | kernels, `NUGET_TOKEN` | abierto |
-| ms3-gap-06 | Si MS4 rechaza el calendario, el contrato queda pagado y sin calendario | medium | MS4 | abierto |
+| ms3-gap-05 | Los contratos de MS3 y los espejos del catálogo son copias locales (also `ContractActivated`, `ProductionOrderReady`, `PatientPublished`) | medium | kernels, `NUGET_TOKEN` | abierto (kernel 1.6.0 already has them; the swap is pending) |
+| ms3-gap-06 | If MS4 rejects the calendar, the contract stays paid without one (and MS3 no longer learns about it) | medium | MS4 | abierto (rejection now = MS4 logs and acks, since MS3#11 / MS4#12) |
 | ms3-gap-07 | La orden de producción real dependía del campo `menu`, que MS4 no devolvía | medium | MS4 | resuelto (MS4#4 devuelve `menu`; MS3 arma la orden desde ahí) |
 | ms3-gap-08 | `MealPlanPublished` no trae precio: el plan proyectado cuesta 0 | low | MS2 | abierto |
 | ms3-gap-09 | Nadie avisa a MS4 que un día está `InProduction` | low | MS4 | abierto (ms4-gap-04) |
@@ -16,6 +16,7 @@
 | ms3-gap-12 | Re-validar una orden da 500 por los paquetes ya validados | high | — | resuelto (MS3#3) |
 | ms3-gap-13 | El seed corre en la plataforma y crea una orden falsa para mañana | high | — | resuelto (MS3#4) |
 | ms3-gap-14 | `daily-order` se congela al primer pedido de la fecha | medium | MS4 | abierto |
+| ms3-gap-18 | The projections have no backfill: a patient MS1 published (or a production order MS4 published) before the deploy is unknown to MS3 | low | MS1, MS4 | abierto (X-15) |
 | ms3-gap-15 | Un paciente puede tener varios contratos activos a la vez | low | MS4 | abierto (decisión de negocio) |
 | ms3-gap-16 | Un `GET` con `Content-Type: application/json` y sin cuerpo responde 400 | low | — | abierto |
 | ms3-gap-17 | `daily-order` no guarda la orden: cada llamada devuelve un `productionOrderId` nuevo | medium | — | abierto |
@@ -28,6 +29,8 @@
 - **Qué haría falta:** definir `contracting.*` en el kernel (contrato, factura, orden, paquete), adoptar `AddSecurity` y proteger cada endpoint, igual que MS2 y MS4. Y resolver la autorización por objeto (X-08).
 
 ### ms3-gap-02 — Pacientes simulados
+> **Update 2026-10-31 (MS3#11, MS1#3):** the REST read of MS1 was **replaced by an event**. MS1 publishes the kernel 1.6.0 contract `PatientPublished` on `paciente-published` when a patient is created, and MS3 projects it into `ClinicPatients` (`PatientPublishedConsumer`, queue `ms3.paciente-published`); the HTTP client (`HttpClinicClient`, `ClinicSimulationService`) and `Clinic__BaseUrl` are gone. On the platform MS3 runs with `Projections__Enabled=true`, so only published patients exist (unknown id → 404 `PATIENT_NOT_FOUND`); standalone the 3 simulated remain. Limit: no backfill (ms3-gap-18, X-15).
+>
 > **Actualización 2026-10-31 — resuelto.** [MS3#8](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/8) agrega el cliente `Clinic` (`HttpClinicClient` + `ClinicSimulationService`): con `Clinic__BaseUrl` MS3 lee el paciente de MS1 por el gateway como `ms3-service`; un 404 de MS1 ([MS1#2](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional/pull/2)) se vuelve `PATIENT_NOT_FOUND`. Sin la variable siguen los 3 simulados. [MS3#9](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/9) además manda el teléfono en `PackageValidated.PatientPhone`. El texto de abajo es el análisis original.
 
 - **Qué pasa:** `POST /contracts` y el etiquetado consultan a `ISimulationService`, que conoce 3 pacientes fijos. Cualquier otro `patientId` da 404 `PATIENT_NOT_FOUND`.
@@ -54,11 +57,14 @@
 - **Qué haría falta:** que MS3 referencie `Nur.Tricenter.Integration` 1.2.0. El formato en el cable es el mismo, así que el cambio es solo de referencias.
 
 ### ms3-gap-06 — Contrato pagado sin calendario
-- **Qué pasa:** el pago y la creación del calendario no son atómicos. Si MS4 responde 400/422 (p. ej. el plan dura 7 días y MS4 solo acepta 15 o 30), la fila queda `Rejected` y no se reintenta, pero el contrato ya está `Active` y cobrado.
+> **Update 2026-10-31 (MS3#11, MS4#12):** the calendar is no longer requested over REST, so MS3 gets no answer at all. MS3 publishes `contract-activated`; if MS4's `ContractActivatedConsumer` rejects the data (a duration that is not 15/30, or one that contradicts the plan) it **logs and acknowledges** the message (a retry would fail the same way). The contract stays `Active` and paid, with no calendar and **no signal in MS3**: the outbox row says `Published` because the broker accepted it. The only trace is MS4's warning log. A missing `durationDays` in the payload (unknown plan) is still marked `Rejected` in MS3's outbox and never published.
+
+- **Qué pasa:** el pago y la creación del calendario no son atómicos. Si MS4 rechaza los datos (p. ej. el plan dura 7 días y MS4 solo acepta 15 o 30) no se crea el calendario, pero el contrato ya está `Active` y cobrado.
 - **Impacto:** un paciente que pagó y no recibe entregas, sin alerta.
 - **Qué haría falta:** validar la duración antes de cobrar (o contra la proyección de MS2), o una acción compensatoria (cancelar/reembolsar) y una alerta sobre filas `Rejected`.
 
 ### ms3-gap-07 — `menu` en `active-tomorrow`
+> **Update 2026-10-31:** MS3 no longer reads `active-tomorrow`; the `menu` of each line now arrives inside `ProductionOrderReady` (MS3#11, MS4#12) and is stored in `ScheduledDeliveries`.
 - **Qué pasa:** MS3 arma la orden con el `menu` de cada entrega. Resuelto: `main` de MS4 ya devuelve `menu` en `active-tomorrow` (MS4#4, mergeado el 2026-10-28). Antes `ActiveTomorrowLineDto` no tenía `Menu` y el cambio estaba en la rama `feat/active-tomorrow-menu`, sin PR (revisado 2026-10-28).
 - **Impacto:** sin ese cambio, la orden diaria solo funciona con los 3 planes simulados; con un plan real responde 422 `NO_RECIPES` (antes era un 500).
 - **Qué haría falta:** nada: el cambio se mergeó en MS4#4 (era aditivo, no rompe a los demás consumidores).
@@ -86,12 +92,17 @@ Los gaps 12 a 16 salieron de la prueba integral en el stack local del 2026-10-28
 `contracting.compose.yml` tenía `Seed__Enabled: "true"`. El seed crea una `DailyProductionOrder` para mañana con recetas inventadas, 2 paquetes (`Assembled` y `Pending`) y contratos pagados sin calendario en MS4. Con esa orden, `daily-order` de mañana **no consulta a MS4**, y los paquetes sembrados salen como `package-validated` sin un día detrás, o hacen fallar la validación. **PR [MS3#4](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/4):** `Seed__Enabled: "false"` en la variante de plataforma (el standalone conserva el seed).
 
 ### ms3-gap-14 — Orden de producción congelada
-Si ya existe la orden de una fecha, `daily-order` la devuelve sin volver a pedir `active-tomorrow`. Los días que MS4 deja listos después (contrato pagado o dirección cargada más tarde) no entran en `recipesSummary`, aunque se les puede crear el paquete igual (`POST /production/packages` no valida que el paciente esté en la orden). Opciones: reconsolidar mientras la orden no esté en producción, o fijar un horario de corte que MS4 también respete.
+Si ya existe la orden de una fecha, `daily-order` la devuelve sin releer la proyección `ScheduledDeliveries` (antes, sin volver a pedir `active-tomorrow`). Los días que MS4 deja listos después (contrato pagado o dirección cargada más tarde) no entran en `recipesSummary`, aunque se les puede crear el paquete igual (`POST /production/packages` no valida que el paciente esté en la orden). Opciones: reconsolidar mientras la orden no esté en producción, o fijar un horario de corte que MS4 también respete.
 
 ### ms3-gap-17 — La orden diaria nunca se guarda
 - **Qué pasa:** `GetDailyOrderQueryHandler` hace `AddAsync` de la orden pero ningún `CommitAsync` (es una query). En el stack local, el 2026-10-31, `DailyProductionOrders` tenía 0 filas y `Packages` varias, cada una con un `ProductionOrderId` que no existe.
 - **Impacto:** cada `GET daily-order` devuelve un id nuevo; los paquetes de una misma fecha quedan repartidos en "órdenes" distintas y `validate` solo ve los de su id. Contradice ms3-gap-14 (la orden "congelada" no llega a existir).
 - **Qué haría falta:** decidir si `daily-order` crea la orden (commit, y entonces aplica ms3-gap-14) o si la consolidación pasa a un comando explícito. Mientras tanto, `GET /production/orders/{id}/packages` ([MS3#10](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/10)) busca los paquetes aunque la orden no exista.
+
+### ms3-gap-18 — Proyecciones sin backfill
+- **Qué pasa:** `ClinicPatients` is filled only by `PatientPublished` events and `ScheduledDeliveries` only by `ProductionOrderReady` events. A patient created in MS1 before MS3#11 / MS1#3 was deployed, or a production order MS4 resolved before, is not in the projections. `POST /contracts` for such a patient answers 404 `PATIENT_NOT_FOUND`; `daily-order` for such a date, 404 `NO_CALENDARS`.
+- **Impacto:** existing data has to be re-published to be visible; the demo and `e2e-smoke.py` create fresh patients and plans, so they are unaffected. Part of X-15.
+- **Qué haría falta:** a republish/backfill endpoint in MS1 and MS4 (as proposed in X-15), or re-running `resolve-daily-catalog` for the order dates.
 
 ### ms3-gap-15 — Varios contratos activos por paciente
 `POST /contracts` no impide que un paciente con un contrato activo contrate otro, y MS4 crea un calendario por contrato: el paciente termina con dos entregas el mismo día. `charge-control` sí rechaza el caso (`ACTIVE_CONTRACT`). Es una decisión de negocio; también afecta el enlace por paciente de MS4 (ver ms4 `messaging.md`).
@@ -105,9 +116,10 @@ En esta ficha se documentó **el código**.
 | Dónde | La doc dice | El código hace |
 |---|---|---|
 | `README.md` del repo (versión anterior a la integración) | MS1, MS2, MS4 y MS5 están simulados y los eventos solo se registran en una tabla | MS2 y MS4 son reales en la plataforma (eventos y REST) y MS5 recibe un evento; la simulación queda solo para MS1 y para el modo standalone |
-| `README.md` del repo (tabla de dependencias) | `MS3 → MS4`: «Evento: crear calendario post-pago» | Es una **llamada REST** `POST /schedule`; la fila `CreateSchedule` del outbox solo la entrega |
+| `README.md` del repo (tabla de dependencias) | `MS3 → MS4`: «Evento: crear calendario post-pago» | Was a REST call `POST /schedule` until MS3#11; since then it really is an event (`contract-activated`) |
 | Estado `Simulated` de `OutgoingIntegrationEvent` | Parece «evento simulado» | Significa **pendiente de entregar**; se conserva el nombre por compatibilidad con las pruebas |
-| `ContractActivatedDomainEvent` / `ContractCanceledDomainEvent` | Nombres de eventos de integración | Son eventos de dominio internos; **ningún contrato `contract-*` sale de MS3** |
+| `ContractActivatedDomainEvent` / `ContractCanceledDomainEvent` | Nombres de eventos de integración | Son eventos de dominio internos. Since MS3#11 the integration event `contract-activated` (`ContractActivated`) does leave MS3, but it is built by `OutboxRelay` from the `CreateSchedule` outbox row, not from the domain event; no `contract-canceled` exists |
+| Esta ficha antes del 2026-10-31 (`integrations.md`, F2, F3, `messaging.md`, `domain.md`) | MS3 llama a MS4 (`POST /schedule`, `GET active-tomorrow`) y a MS1 (`GET Patient/{id}`) con `ms3-service` | Removed in MS3#11: those are events and local projections now; MS3 makes no outbound HTTP |
 | X-10 (cross-service-gaps, antes de esta ficha) | El evento de MS3 «no existe» y MS3 «sin repo» | `PackageValidated` existe en el kernel (rama `feat/contracting-messages`) y se publica desde MS3; falta su consumidor en MS5 |
 | Esta ficha: `integrations.md`, `messaging.md`, `domain.md` y F2 (corregido 2026-10-28, revisión transversal) | El cambio y su fila del outbox se guardan «en la misma transacción» | Dos `CommitAsync` sin transacción explícita en `ProcessPaymentCommandHandler` y `ApproveQualityCommandHandler` (`ms3-gap-11`) |
 | Esta ficha: `messaging.md` (corregido 2026-10-28, revisión transversal) | MS3 usa una copia local «idéntica» del contrato del kernel | Copia **equivalente**: mismos campos y `EventType`, pero namespace `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.*` (no `Nur.Tricenter.Integration.Messages.*`) y base `IntegrationMessage` de Joseco |

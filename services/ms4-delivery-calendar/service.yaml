@@ -1,4 +1,4 @@
-# Ficha estructurada de MS4. Fuente: código de Nur-tricenter/ms4-delivery-schedule-management (2026-10-23).
+# Ficha estructurada de MS4. Fuente: código de Nur-tricenter/ms4-delivery-schedule-management (2026-10-23; actualizado el 2026-10-31 a MS4#12: sin HTTP saliente, outbox propio).
 
 id: ms4
 name: Calendario de entregas (Delivery Calendar)
@@ -8,9 +8,9 @@ owner:
 repo: Nur-tricenter/ms4-delivery-schedule-management
 status: complete
 summary: >-
-  Convierte un plan nutricional contratado (15 o 30 días) en un calendario de entregas diarias por
-  paciente. Gestiona dirección, menú y estado de cada día, aplica la regla de 48h y consolida la
-  orden de producción del día siguiente que consume MS3.
+  Convierte un plan contratado (15 o 30 días) en un calendario de entregas diarias por paciente.
+  Gestiona dirección, menú y estado de cada día, aplica la regla de 48h y publica a MS3 la orden de
+  producción de mañana (production-order-ready). Sin HTTP saliente: eventos y proyecciones.
 stack: [.NET 10, .NET Aspire, Minimal APIs, MediatR, EF Core, PostgreSQL, RabbitMQ (Joseco)]
 
 runtime:
@@ -34,14 +34,14 @@ endpoints:
   - method: POST
     path: /api/v1/schedule
     scope: deliveryCalendar.calendar:create
-    callers: [ms3]
-    summary: Crea el calendario de un contrato con N días en Pending. Repetir con el mismo contractId devuelve el existente.
+    callers: [ops]
+    summary: Crea el calendario de un contrato con N días en Pending. Repetir con el mismo contractId devuelve el existente. Ops and tests; MS3 no longer calls it (contract-activated event).
     idempotent: true
   - method: GET
     path: /api/v1/calendars/active-tomorrow
     scope: deliveryCalendar.productionOrder:read
-    callers: [ms3]
-    summary: Orden de producción consolidada de mañana (o de ?date=). Lista vacía si el job no corrió.
+    callers: [frontend, ops]
+    summary: Orden de producción consolidada de mañana (o de ?date=). Lista vacía si el job no corrió. MS3 no longer calls it (production-order-ready event).
     idempotent: true
   - method: GET
     path: /api/v1/calendars/{id}
@@ -95,7 +95,7 @@ endpoints:
     path: /api/v1/calendars/resolve-daily-catalog
     scope: deliveryCalendar.catalogResolution:manage
     callers: [ops]
-    summary: Job diario (disparo manual). Pide a MS2 el menú de los días Scheduled de mañana, los pasa a ReadyForProduction y consolida la orden.
+    summary: Job diario (disparo manual). Lee de PlanDayMenus el menú de los días Scheduled de mañana, los pasa a ReadyForProduction, consolida la orden y publica production-order-ready por el outbox propio.
     idempotent: true
   - method: GET
     path: /health
@@ -104,30 +104,35 @@ endpoints:
     summary: Health check anónimo que usa Consul.
     idempotent: true
 
-sync_calls:
-  - target: ms2
-    method: GET
-    path: /api/catalog/v1/meal-plans/{planId}
-    via: gateway
-    auth: service-account:ms4-service
-    purpose: Obtener la composición del plan y quedarse con el PlanDay cuyo DayNumber coincide con el del DeliveryDay (menú y raciones).
-    on_failure: El día se omite y queda en Scheduled; el resto del job sigue. Se recupera re-ejecutando el job (idempotente). Una caché por plan dura una corrida.
-  - target: identity
-    method: POST
-    path: /api/identity-service/v1/auth/login
-    via: gateway
-    auth: none
-    purpose: Obtener el JWT de la service account ms4-service (scope catalog.mealPlan:read). Se cachea hasta 60 s antes de vencer.
-    on_failure: Si MS2 responde 401, se vuelve a hacer login una vez. Si el login falla, la llamada a MS2 falla y el día queda en Scheduled.
+sync_calls: []
+# MS4 makes no outbound HTTP since MS4#12. The former MS4 -> MS2 GET meal-plans/{id} (and the
+# ms4-service login) became the meal-plan-composition-changed event projected into PlanDayMenus.
 
-events_published: []
+events_published:
+  - exchange: production-order-ready
+    contract: ProductionOrderReady
+    event_type: ProductionOrder.Ready
+    trigger: resolve-daily-catalog consolidates the order of a delivery date. Full snapshot (lines with address, coordinates and menu). Staged in the own OutboxMessages table and published by the worker's OutboxDispatcher every 5 s. MS3 projects it.
+    outbox: true
 
 events_consumed:
+  - queue: ms4.contract-activated
+    exchange: contract-activated
+    contract: ContractActivated
+    handler: ContractActivatedConsumer
+    effect: Sends CreateScheduleCommand (ContractId, PatientId, CatalogPlanId, DurationDays, StartDate) via MediatR; creates the calendar, idempotent by contract id. Data the command rejects (duration not 15/30, or contradicting the plan) is logged and acknowledged.
+    idempotent: true
+  - queue: ms4.meal-plan-composition-changed
+    exchange: meal-plan-composition-changed
+    contract: MealPlanCompositionChanged
+    handler: MealPlanCompositionChangedConsumer
+    effect: Upserts the PlanDayMenus projection (PlanId + DayNumber, with owned menu items); an older snapshot (by CreatedAt) is ignored. ProjectedCatalogPort reads it for resolve-daily-catalog.
+    idempotent: true
   - queue: ms4.meal-plan-published
     exchange: meal-plan-published
     contract: MealPlanPublished
     handler: MealPlanPublishedConsumer
-    effect: Upsert del plan en la proyección PlanCatalog. POST /schedule la usa para rechazar (400) una duración distinta a la del plan.
+    effect: Upsert del plan en la proyección PlanCatalog. La creación del calendario la usa para rechazar una duración distinta a la del plan.
     idempotent: true
   - queue: ms4.recipe-updated
     exchange: recipe-updated
@@ -172,3 +177,10 @@ gaps:
   - id: ms4-gap-05
     summary: Las descripciones OpenAPI de Calendars.cs contradicen al código en dos casos (409 al repetir /schedule, 422 al cancelar ReadyForProduction).
     severity: low
+  - id: ms4-gap-06
+    summary: A new production order is saved before its outbox row (its id is generated by the database), so a crash between the two saves loses the event; re-running resolve-daily-catalog recovers it.
+    severity: low
+  - id: ms4-gap-07
+    summary: PlanDayMenus has no backfill (plans composed before the deploy are unknown until MS2 publishes again) and MS2 emits one snapshot per composition change.
+    severity: low
+    blocked_by: ms2

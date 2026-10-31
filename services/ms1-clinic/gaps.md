@@ -6,7 +6,7 @@
 | ms1-gap-02 | Sin scopes de MS1 (solo exige token válido); Swagger expuesto por defecto | medium | MS1 / kernels / identity | parcial (JWT desde MS1#1) |
 | ms1-gap-03 | `POST /api/v1/patients/contact-information` que espera MS5, y `Paciente` sin teléfono | high | MS1 / MS5 | resuelto (MS1#1); MS5 ya no lo llama |
 | ms1-gap-04 | `PacientePublished` salía con `PacienteId` incorrecto y campos cruzados | high | — | resuelto (MS1#1) |
-| ms1-gap-05 | Contrato local, exchange fuera de la topología y sin consumidores | medium | MS1 / nur-tricenter-local | abierto |
+| ms1-gap-05 | Contrato local, exchange fuera de la topología y sin consumidores | medium | MS1 / nur-tricenter-local | resuelto (kernel 1.6.0 `PatientPublished`, MS1#3; exchange y cola `ms3.paciente-published` en la topología; MS3 lo consume, MS3#11) |
 | ms1-gap-06 | BD SQL Server cableada, no funcionaba en contenedor | high | — | resuelto (Postgres, MS1#1) |
 | ms1-gap-07 | `Paciente` sin id de usuario de identity | medium | identity | abierto (X-08) |
 | ms1-gap-08 | Sin manejo de errores: inexistente → 500 | medium | — | abierto |
@@ -15,6 +15,7 @@
 | ms1-gap-11 | Rutas duplicadas sin `/api` (`/Paciente`, `/Atencion`) | low | — | abierto |
 | ms1-gap-12 | `dockerfile` y `docker-compose.yml` rotos | low | — | resuelto (MS1#1) |
 | ms1-gap-13 | `PlanAlimenticio` no se vincula con el plan de MS2 | medium | MS2 | abierto |
+| ms1-gap-14 | Only patient creation publishes `paciente-published`; there is no patient-update use case and no backfill of earlier patients | low | MS3 | abierto (X-15) |
 
 ## Detalle
 
@@ -43,6 +44,7 @@
 - **Qué haría falta:** asignar `Id = Guid.NewGuid()` dentro de `Crear`, pasar los argumentos en el orden correcto (o con nombre) y quitar el registro manual duplicado.
 
 ### ms1-gap-05 — Evento fuera del catálogo de la plataforma
+- **Resuelto (2026-10-31, MS1#3 + kernel 1.6.0 + MS3#11):** the contract is now the kernel's `PatientPublished` (`Messages/Clinic`, with `EventType` `Patient.Published` and a `Phone` field); MS1 deleted its local `PacientePublished`. The exchange `paciente-published` and the queue `ms3.paciente-published` are in the platform topology, and **MS3 consumes it** into `ClinicPatients` (it replaced MS3's REST call). Lo de abajo es el estado previo.
 - **Qué pasa:** `PacientePublished` es un record local (`GestionClinicaNutricional.Application.Contracts`), no está en `Nur.Tricenter.Integration` y no tiene `EventType`. El exchange `paciente-published` lo declara el worker de MS1 (fanout, no durable) junto con la cola sumidero durable `gestion-clinica-nutricional.default`. La topología de la plataforma no lo conoce y nadie lo consume.
 - **Qué haría falta:** mover el contrato al kernel (con nombres en inglés, como los demás: `PatientRegistered` o similar), declarar exchange y colas de consumidores en `rabbitmq-definitions.json` y que MS3/MS5 lo consuman.
 
@@ -52,6 +54,11 @@
 - **Qué pasaba antes:** `AddDbContext` usaba una cadena literal (`localhost\SQLEXPRESS`, BD `ClinicaNutricional`, `Trusted_Connection`), y `DatabaseContext.OnConfiguring` la reemplazaba por `ClinicaNutricional3`. `appsettings.json` no se leía. El resto de la plataforma usa PostgreSQL.
 - **Impacto:** solo corre en una máquina Windows con SQL Express; dentro de un contenedor no hay `localhost\SQLEXPRESS` ni autenticación de Windows. Los tests de integración escriben en la misma BD de desarrollo.
 - **Qué haría falta:** leer `ConnectionStrings:DefaultConnection`, quitar `OnConfiguring` y decidir el motor (Postgres compartido, como MS2–MS5).
+
+### ms1-gap-14 — Solo la creación publica
+- **Qué pasa:** `PublishIntegrationEventWhenPacienteCreated` is the only publisher; MS1 has no patient-update use case, so a changed name or phone would not reach MS3. Patients created before MS1#3 was deployed were never published (no backfill, X-15).
+- **Impacto:** MS3 answers 404 `PATIENT_NOT_FOUND` for such a patient. The demo and `e2e-smoke.py` register fresh patients, so they are unaffected.
+- **Qué haría falta:** if an update use case is added, publish the same `PatientPublished` from it (the consumer upserts by `PatientId`); for old patients, a republish endpoint or re-creating them.
 
 ### ms1-gap-07 — Sin vínculo con identity
 `Paciente` no guarda el id de usuario de identity, y MS1 no consume `ms1.user-published`. Sin ese mapeo no se puede cerrar la autorización por objeto en MS4 ni en MS1 (X-08).

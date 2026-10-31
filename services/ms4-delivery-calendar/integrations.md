@@ -1,56 +1,37 @@
 # Integraciones síncronas — MS4
 
 ## Resumen
-| Destino | Método y ruta | Vía | Auth | Para qué |
-|---|---|---|---|---|
-| MS2 Catálogo | `GET /api/catalog/v1/meal-plans/{planId}` | gateway | service account `ms4-service` | Menú del día N del plan |
-| Identity | `POST /api/identity-service/v1/auth/login` | gateway | ninguna (es el login) | Token de `ms4-service` |
+**None.** Since MS4#12 MS4 makes no outbound HTTP call: there is no REST between MS4 and any other service. `sync_calls` in [service.yaml](./service.yaml) is empty.
 
-## MS4 → MS2: menú del día
-- **Puerto:** `ICatalogPort.GetDayMenuAsync(planId, dayNumber)` (`src/Application/Common/Interfaces/ICatalogPort.cs`).
-- **Adaptador real:** `src/Infrastructure/Catalog/HttpCatalogPort.cs`. La ruta es configurable (`Catalog:MealPlanPathTemplate`) y la base es `Catalog:BaseUrl` = `http://gateway:8080` en la plataforma.
-- **Qué hace:** MS2 **no tiene un endpoint por día**: los planes se modelan por **número de día**, no por fecha. MS4 trae la composición completa del plan y elige el `PlanDay` cuyo `DayNumber` coincide con el del `DeliveryDay`. Aplana los tiempos de comida y las recetas en `MenuItem` y descarta los de 0 raciones.
-- **Forma de la respuesta de MS2** (copiada localmente como DTOs privados; es un read model, no un contrato compartido):
-  ```
-  ApiResponse { success, message, data: MealPlanComposition { mealPlanId, name,
-    days: [ { dayNumber, mealTimes: [ { mealTimeId, name, order,
-      recipes: [ { recipeId, recipeName, ration: { quantity } } ] } ] } ] } }
-  ```
-- **Caché:** una entrada por plan durante una corrida del job (muchos pacientes comparten pocos planes).
-- **Por qué es síncrono:** MS4 necesita la composición actual del plan en un momento preciso (la noche anterior). Mantener una réplica completa de los planes por eventos sería más complejo, y `meal-plan-published` no trae la composición.
-- **Por qué no se llama bajo demanda:** se resuelve **antes** de que MS3 consulte `active-tomorrow`. Así una caída de MS2 no afecta la consulta de MS3.
-- **Si falla:**
-  | Respuesta de MS2 | Resultado |
-  |---|---|
-  | 404 (plan inexistente) o día sin recetas | El día se omite, se registra en el log y queda en `Scheduled` |
-  | 401/403 (service account mal configurada) o 5xx | La corrida no puede resolver ese plan; los días quedan en `Scheduled` |
-  | Transitorios | Reintentos del resilience handler (ServiceDefaults) |
+| Was | Is now |
+|---|---|
+| MS4 → MS2 `GET /api/catalog/v1/meal-plans/{planId}` (menu of day N, as `ms4-service`) | MS2 publishes `meal-plan-composition-changed`; MS4 projects it into `PlanDayMenus` and `ProjectedCatalogPort` reads it ([messaging.md](./messaging.md)) |
+| MS4 → Identity `POST /api/identity-service/v1/auth/login` (token of `ms4-service`) | Gone: nothing to authenticate. `ms4-service` still exists in identity (the demo console's security view uses it) |
 
-  **Recuperación:** volver a correr el job (es idempotente).
-- **Sin MS2:** `Catalog:UseMock=true` (Aspire y tests) usa `MockCatalogPort`, un fixture determinístico por `planId` + número de día.
+What was deleted from the code: `HttpCatalogPort`, `ServiceAccountTokenHandler`, the `Catalog:BaseUrl`, `Catalog:MealPlanPathTemplate` and `Identity:*` options, and the `Catalog__BaseUrl` / identity environment of `ms4.compose.yml`. `MockCatalogPort` stays for Aspire and the tests (`Catalog:UseMock=true`).
+
+## `ICatalogPort`: the menu of a plan day
+- **Port:** `ICatalogPort.GetDayMenuAsync(planId, dayNumber)` (`src/Application/Common/Interfaces/ICatalogPort.cs`).
+- **Platform adapter** (`Catalog:UseMock=false`, now set on the worker too): `ProjectedCatalogPort` (next to `PlanDayMenu` in `src/Infrastructure/Messaging/PlanDayMenus.cs`). It reads the `PlanDayMenus` row of (`planId`, `dayNumber`) and returns its items ordered by meal time order. No row → `null`.
+- **Standalone adapter** (`Catalog:UseMock=true`: Aspire and tests): `MockCatalogPort`, a deterministic fixture per `planId` + day number.
+- **Key:** MS2 models plans by day **number**, not by date, so `DeliveryDay.DayNumber` (1..N, fixed at creation) is the lookup key.
+- **If the menu is missing** (MS2 has not published that plan's composition yet, or the day has no recipes): the day is **skipped and logged** and stays `Scheduled`. Recovery: re-run `resolve-daily-catalog` once the composition arrived. There is no 401/5xx/timeout any more, because nothing is called.
+- **Why an event and not a call:** the course rule (no synchronous inter-service REST), and the old argument for REST ("`meal-plan-published` does not carry the composition") was solved by a new event that does: `meal-plan-composition-changed` is a full snapshot of the plan.
 
 ```mermaid
 sequenceDiagram
+  participant MS2
+  participant MQ as RabbitMQ
+  participant W as MS4 Worker
+  participant DB as MS4 DB (PlanDayMenus)
   participant OPS as Operaciones
   participant MS4
-  participant ID as Identity
-  participant GW as Gateway
-  participant MS2
+  MS2-)MQ: MealPlanCompositionChanged (on every composition change)
+  MQ-)W: ms4.meal-plan-composition-changed
+  W->>DB: upsert PlanDayMenus (an older snapshot is ignored)
   OPS->>MS4: POST /resolve-daily-catalog
-  MS4->>GW: POST /api/identity-service/v1/auth/login (ms4-service)
-  GW->>ID: POST /api/v1/auth/login
-  ID-->>MS4: { accessToken, expiresIn }
-  loop por cada plan distinto entre los días Scheduled de mañana
-    MS4->>GW: GET /api/catalog/v1/meal-plans/{planId} + Bearer
-    GW->>MS2: GET /api/v1/meal-plans/{planId}
-    MS2-->>MS4: 200 composición
-  end
-  MS4->>MS4: días → ReadyForProduction, consolida ProductionOrder
+  MS4->>DB: ProjectedCatalogPort.GetDayMenuAsync(planId, dayNumber)
+  DB-->>MS4: menu items
+  MS4->>MS4: days -> ReadyForProduction, consolidate ProductionOrder, stage ProductionOrderReady
   MS4-->>OPS: 204
 ```
-
-## MS4 → Identity: token de servicio
-- **Componente:** `src/Infrastructure/Catalog/ServiceAccountTokenHandler.cs` (un `DelegatingHandler` del `HttpClient` de MS2).
-- **Cuenta:** `ms4-service`, con el scope `catalog.mealPlan:read` (mínimo privilegio). Las credenciales llegan por configuración (`ms4.compose.yml`), no están en el código.
-- **Ciclo:** login → cachea el token hasta 60 s antes de `expiresIn` → si MS2 responde **401**, hace login otra vez **una sola vez** y reintenta.
-- **Por qué una service account y no el token del usuario:** el job no corre en nombre de ningún paciente. Es MS4 actuando por sí mismo.

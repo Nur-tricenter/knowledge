@@ -12,22 +12,23 @@
 #   - Cada servicio que consume un evento debe tener su cola en `queues` del exchange correspondiente.
 
 status: draft
-updated: 2026-10-28
+updated: 2026-10-31
 
 exchanges:
   # ── Clínica (MS1) ───────────────────────────────────────────────────────────
-  # OJO: este exchange NO está en la topología de la plataforma (rabbitmq-definitions.json).
-  # Lo declara el propio worker de MS1 (repo Juandcode/ClinicaNutricionalMicroservicio1), junto con
-  # el sink durable gestion-clinica-nutricional.default (sin consumidor; no va en queues).
-  # El contrato es local a MS1 (no está en Nur.Tricenter.Integration) y su sobre Joseco no lleva
-  # EventType: "Paciente.Published" es solo la convención del catálogo. Ver services/ms1-clinic/messaging.md.
+  # Kernel contract since Nur.Tricenter.Integration 1.6.0 (MS1 deleted its local PacientePublished).
+  # The exchange and the queue ms3.paciente-published are declared by the platform topology
+  # (nur-tricenter-local). MS1's worker still declares the exchange too, plus the durable sink
+  # gestion-clinica-nutricional.default (no consumer; not listed in queues).
+  # Full patient snapshot, published when a patient is created (MS1 has no patient-update use case).
+  # MS3 projects it into ClinicPatients, so it no longer calls MS1 over REST.
   - name: paciente-published
     publisher: ms1
-    contract: PacientePublished
-    namespace: GestionClinicaNutricional.Application.Contracts
-    event_type: Paciente.Published
-    payload: [PacienteId, CI, Nombre, Apellido]
-    queues: []
+    contract: PatientPublished
+    namespace: Nur.Tricenter.Integration.Messages.Clinic
+    event_type: Patient.Published
+    payload: [PatientId, DocumentNumber, FirstName, LastName, Phone]
+    queues: [ms3.paciente-published]
 
   # ── Catálogo (MS2) ──────────────────────────────────────────────────────────
   - name: food-published
@@ -70,6 +71,18 @@ exchanges:
     payload: [PlanId, Name, DurationType, TotalDays, MealsPerDay]
     queues: [ms1.meal-plan-published, ms3.meal-plan-published, ms4.meal-plan-published, ms5.meal-plan-published]
 
+  # Kernel 1.6.0. Full snapshot of a plan's days, meal times and recipes (names and rations), built by MS2
+  # from the write side every time a meal time is added or a recipe is assigned/removed (one message per
+  # change; consumers keep the latest by CreatedAt). MS4 projects it into PlanDayMenus, so it no longer
+  # calls MS2 over REST.
+  - name: meal-plan-composition-changed
+    publisher: ms2
+    contract: MealPlanCompositionChanged
+    namespace: Nur.Tricenter.Integration.Messages.Catalog
+    event_type: MealPlan.CompositionChanged
+    payload: [PlanId, "Days[]: DayNumber, MealTimes[]: Name, Order, Recipes[]: RecipeId, RecipeName, Rations"]
+    queues: [ms4.meal-plan-composition-changed]
+
   # ── Identidad ───────────────────────────────────────────────────────────────
   - name: user-published
     publisher: identity
@@ -88,6 +101,17 @@ exchanges:
     queues: [ms1.user-updated, ms2.user-updated, ms3.user-updated, ms4.user-updated, ms5.user-updated]
 
   # ── Contratación y producción (MS3) ─────────────────────────────────────────
+  # Kernel 1.6.0; MS3 still publishes a local copy of the contract with the same wire shape (ms3-gap-05).
+  # Sent by the outbox relay when a contract is paid. MS4 creates the delivery calendar (idempotent by
+  # ContractId). Replaces the former REST call MS3 -> MS4 POST /schedule.
+  - name: contract-activated
+    publisher: ms3
+    contract: ContractActivated
+    namespace: Nur.Tricenter.Integration.Messages.Contracting
+    event_type: Contract.Activated
+    payload: [ContractId, PatientId, CatalogPlanId, DurationDays, StartDate]
+    queues: [ms4.contract-activated]
+
   - name: package-validated
     publisher: ms3
     contract: PackageValidated
@@ -96,6 +120,19 @@ exchanges:
     # PatientName y DeliveryDate desde 1.3.0; DeliveryDayId (int?, null si no hay calendario) desde 1.4.0; PatientPhone (string?, null si MS1 no lo tiene) desde 1.5.0.
     payload: [PackageId, PatientId, PatientName, ProductionOrderId, CatalogPlanId, ReleasedAt, DeliveryDate, DeliveryAddress, TrackingNumber, Latitude, Longitude, DeliveryDayId, PatientPhone]
     queues: [ms5.package-validated]
+
+  # ── Calendario de entregas (MS4) ────────────────────────────────────────────
+  # Kernel 1.6.0. Full snapshot of one delivery date's production order (lines with address, coordinates
+  # and menu), published through MS4's own outbox (table OutboxMessages + OutboxDispatcher) after
+  # resolve-daily-catalog. MS3 replaces its ScheduledDeliveries rows for that date. Replaces the former
+  # REST call MS3 -> MS4 GET /calendars/active-tomorrow. Line Hour is an "HH:mm" string.
+  - name: production-order-ready
+    publisher: ms4
+    contract: ProductionOrderReady
+    namespace: Nur.Tricenter.Integration.Messages.DeliveryCalendar
+    event_type: ProductionOrder.Ready
+    payload: [ProductionOrderId, DeliveryDate, ProductionDate, "Lines[]: DeliveryDayId, PatientId, PlanId, Hour, Address, Latitude, Longitude, Menu[]: MealTime, MealTimeOrder, RecipeId, RecipeName, Rations"]
+    queues: [ms3.production-order-ready]
 
   # ── Logística (MS5) — publicados vía outbox; solo los tres delivery-* tienen colas (ms4.*) ──
   # El worker de MS5 declara además el sink nurtricenter.default (durable, nunca consumido),

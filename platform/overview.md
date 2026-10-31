@@ -24,7 +24,7 @@ Cada paso pertenece a un microservicio distinto, y el foco del diplomado está e
 | — | Identity | Usuarios, scopes y emisión de JWT | [nur-tricenter-identity](https://github.com/Nur-tricenter/nur-tricenter-identity) | [complete](../services/identity-service/README.md) |
 | — | API Gateway | Punto de entrada único, ruteo dinámico vía Consul | [nur-tricenter-api-gateway](https://github.com/Nur-tricenter/nur-tricenter-api-gateway) | [complete](../services/gateway-api/README.md) |
 
-MS1 corre en el stack local desde 2026-10-31 y MS3 ya lo usa: lee el paciente de MS1 por el gateway (MS3#8) y manda su teléfono a MS5 en `package-validated` (MS3#9, MS5#8). MS5 no lo llama (MS5#4). Su ficha sigue en `draft` hasta que lo revise Diego; falta el vínculo `sub` → paciente (X-08).
+MS1 runs in the local stack since 2026-10-31 and MS3 uses it: MS1 publishes `paciente-published` (kernel 1.6.0 contract `PatientPublished`) and MS3 keeps a local copy of the patient, which is where the name and phone it sends to MS5 in `package-validated` come from (MS3#9, MS5#8). Nobody calls MS1 over REST. Su ficha sigue en `draft` hasta que lo revise Diego; falta el vínculo `sub` → paciente (X-08).
 
 Repos de soporte (no son microservicios de negocio):
 - [nur-tricenter-shared-kernels](https://github.com/Nur-tricenter/nur-tricenter-shared-kernels): paquetes NuGet compartidos (`Access`, `Security`, `Integration`, `Observability`).
@@ -42,21 +42,22 @@ sequenceDiagram
   participant MS4 as MS4 Calendario
   participant MS5 as MS5 Logística
 
-  MS2-->>MS4: evento meal-plan-published (el plan existe y dura N días)
-  P->>MS1: se registra
-  P->>MS3: contrata y paga un plan
-  MS3->>MS4: POST /schedule (crea calendario de N días)
-  P->>MS4: asigna dirección / reprograma / cancela (regla de 48h)
-  Note over MS4: Noche D-1: job de catálogo
-  MS4->>MS2: GET /meal-plans/{id} (menú del día N)
-  MS3->>MS4: GET /calendars/active-tomorrow (orden de producción)
-  Note over MS3: cocina produce
+  MS2-->>MS4: event meal-plan-published (the plan exists and lasts N days)
+  MS2-->>MS4: event meal-plan-composition-changed (the plan's days, meal times and recipes)
+  P->>MS1: registers
+  MS1-->>MS3: event paciente-published (MS3 keeps a local copy of the patient)
+  P->>MS3: contracts and pays a plan
+  MS3-->>MS4: event contract-activated (MS4 creates the N-day calendar)
+  P->>MS4: sets address / reschedules / cancels (48h rule)
+  Note over MS4: Night D-1: catalog job (day N menu from its local projection)
+  MS4-->>MS3: event production-order-ready (tomorrow's production order)
+  Note over MS3: kitchen produces
   MS5->>MS5: arma ruta y entrega
   MS3--)MS5: evento package-validated (paquetes listos; MS5 lo consume en main desde MS5#3)
   MS5--)MS4: eventos delivery-added-to-route / delivery-completed / delivery-failed
 ```
 
-Las flechas continuas son REST y las punteadas son eventos RabbitMQ. Los dos últimos pasos cierran de punta a punta: MS5 consume `package-validated` y MS4 reconoce el día por `DeliveryDayId` (kernel 1.4.0), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 en [../gaps/cross-service-gaps.md](../gaps/cross-service-gaps.md); MS4#8).
+Solid arrows are REST from a person or the frontend to a service (through the gateway); dotted arrows are RabbitMQ events. **There is no business REST between services any more:** whatever a service needs from another arrives as an event and is stored in a local projection (see [communication.md](./communication.md)). The last two steps close de punta a punta: MS5 consume `package-validated` y MS4 reconoce el día por `DeliveryDayId` (kernel 1.4.0), con respaldo por `PackageId` numérico y por paciente (X-01, X-10 en [../gaps/cross-service-gaps.md](../gaps/cross-service-gaps.md); MS4#8).
 
 ## Actores humanos
 | Actor | Interactúa con | Cómo |

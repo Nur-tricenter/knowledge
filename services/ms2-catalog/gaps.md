@@ -4,16 +4,17 @@
 |---|---|---|---|---|
 | ms2-gap-01 | Cola `ms2.user-updated` declarada sin consumidor (no se proyectan cambios de usuario) | medium | identity | abierto (X-06) |
 | ms2-gap-02 | `food-nutritional-info-updated` está cableado (handler + publish) pero es inalcanzable: `UpdateNutritionalInfo` no tiene invocador | medium | — | abierto |
-| ms2-gap-03 | `recipe-updated` está cableado pero es inalcanzable vía API: no hay endpoint de edición de receta y alta/baja de ingredientes no lo dispara | medium | — | abierto |
+| ms2-gap-03 | `recipe-updated` está cableado pero es inalcanzable vía API: no hay endpoint de edición de receta y alta/baja de ingredientes no lo dispara | medium | — | abierto (MS2#6 did not change it: the event is still untriggerable) |
 | ms2-gap-04 | `RecipePublished`/`RecipeUpdated` no transportan ingredientes ni composición; no existe evento "receta completa" | medium | consumidores | abierto |
 | ms2-gap-05 | Cambios de alimento (`FoodUpdated`) solo se proyectan al read model; no hay contrato de integración para ellos | medium | consumidores | abierto |
-| ms2-gap-06 | Cambios de plan (`MealPlanUpdated`, `MealTimeAddedToPlan`, `RecipeAssignedToMealTime`, `RecipeRemovedFromMealTime`) no se publican externamente | low | consumidores | abierto |
+| ms2-gap-06 | Cambios de plan (`MealPlanUpdated`, `MealTimeAddedToPlan`, `RecipeAssignedToMealTime`, `RecipeRemovedFromMealTime`) no se publican externamente | low | consumidores | resuelto (2026-10-31, MS2#6: `meal-plan-composition-changed` covers the three composition events; `MealPlanUpdated` has no invoker, ms2-gap-10) |
 | ms2-gap-07 | Autorización por objeto (BOLA): cualquier token con scope `edit` modifica cualquier recurso; no se valida propiedad ni autoría | high | identity / MS1 | abierto (X-08) |
 | ms2-gap-08 | `GetMealPlanComposition` consulta receta e ingredientes en bucle (N+1) contra el read model | low | — | abierto |
 | ms2-gap-09 | Nombre en Consul inconsistente: default del código `catalog-service`, override de plataforma `catalog` (define el prefijo del gateway) | low | gateway | abierto |
 | ms2-gap-10 | No hay endpoints para editar nombre/instrucciones de receta ni nombre/duración de plan | low | — | abierto |
 | ms2-gap-11 | Los handlers capturan toda excepción y la devuelven como `Result.Fail(ex.Message)`: una caída de BD responde `400`/`404` (no `5xx`) exponiendo el mensaje interno; `PUT /foods` responde `404` ante cualquier fallo | medium | — | abierto |
 | ms2-gap-12 | Scopes `catalog.{food,recipe,mealPlan}:manage` definidos en el kernel pero sin endpoint que los exija; `CatalogRoutes` del kernel no coincide con las rutas reales | low | — | abierto |
+| ms2-gap-13 | `meal-plan-composition-changed` has no backfill (a plan composed before MS2#6 is unknown to MS4) and MS2 emits one full snapshot per composition change | low | MS4 | abierto (X-15) |
 
 ## Detalle
 
@@ -26,6 +27,7 @@
 - **Qué pasa:** existen `SaveInOutboxWhenFoodNutritionalInfoUpdated`, `PublishIntegrationEventWhenFoodNutritionalInfoUpdated`, `SaveInOutboxWhenRecipeUpdated` y `PublishIntegrationEventWhenRecipeUpdated`, pero ningún caso de uso dispara los eventos de dominio correspondientes (`Food.UpdateNutritionalInfo` y `Recipe.Update` no se invocan desde ningún handler). Alta/baja de ingredientes dispara `IngredientAddedToRecipe`/`IngredientRemovedFromRecipe`, que se proyectan al read model pero **no** se traducen a `recipe-updated`.
 - **Impacto:** los consumidores (MS4 incluido, que renombra recetas en días abiertos) nunca reciben esos eventos, aunque la topología y el contrato existan. El contrato `recipe-updated` es, en la práctica, un evento muerto.
 - **Qué haría falta:** agregar comandos `UpdateFoodNutritionalInfo` y `UpdateRecipe` (o traducir los eventos de ingrediente a `recipe-updated`), y decidir el contrato (hoy `RecipeUpdated` lleva solo `RecipeId, Name, Instructions`).
+- **Update 2026-10-31 (MS2#6):** nothing changed for `recipe-updated`: it is still untriggerable through the API, so MS4's `RecipeUpdatedConsumer` (which renames recipes in open days) never receives it. The recipe names in MS4's menus (`PlanDayMenus`) now come from `meal-plan-composition-changed`, a snapshot taken when the plan changes, not from `recipe-updated`.
 
 ### ms2-gap-04 — Sin "receta completa"
 - **Qué pasa:** `RecipePublished` y `RecipeUpdated` llevan solo identidad e instrucciones. Los ingredientes se agregan después y nunca se notifican.
@@ -33,6 +35,7 @@
 - **Qué haría falta:** un evento `RecipeCompositionChanged` (o incluir ingredientes en `recipe-updated`), más la decisión de si el evento se dispara por ingrediente o por receta.
 
 ### ms2-gap-05 / ms2-gap-06 — Cambios internos no publicados
+- **ms2-gap-06 resuelto (2026-10-31, MS2#6):** `MealTimeAddedToPlan`, `RecipeAssignedToMealTime` and `RecipeRemovedFromMealTime` are now translated to the kernel contract `MealPlanCompositionChanged` (exchange `meal-plan-composition-changed`, a full snapshot of the plan built from the write side, one message per change) by `PublishIntegrationEventWhenMealPlanCompositionChanged`. MS4 consumes it (`ms4.meal-plan-composition-changed`) and no longer calls `GET /meal-plans/{id}`. `MealPlanUpdated` still has no publisher, but nothing invokes it either (ms2-gap-10). ms2-gap-05 (`FoodUpdated`) stays open. Lo de abajo es el estado previo.
 - **Qué pasa:** `FoodUpdated` (nombre, categoría, unidad, nutrición) se proyecta al read model pero no tiene handler de publicación. Lo mismo para `MealPlanUpdated`, `MealTimeAddedToPlan`, `RecipeAssignedToMealTime` y `RecipeRemovedFromMealTime`.
 - **Impacto:** los consumidores solo se enteran del alta inicial (`food-published`, `meal-plan-published`, `recipe-published`); cualquier edición posterior no se propaga. MS4 no se entera de que un plan cambió después de publicado (aunque hoy no lo necesita, porque resuelve la composición por GET).
 - **Qué haría falta:** decidir qué cambios son relevantes para otros servicios y agregar los contratos correspondientes en `Nur.Tricenter.Integration`.
@@ -44,7 +47,7 @@
 
 ### ms2-gap-08 — N+1 en la composición
 - **Qué pasa:** `GetMealPlanCompositionHandler` consulta la receta y sus ingredientes dentro del bucle de días/tiempos de comida.
-- **Impacto:** latencia alta para planes grandes; MS4 lo llama una vez por plan distinto por corrida, así que el costo se amortiza, pero sigue siendo ineficiente.
+- **Impacto:** latencia alta para planes grandes; since MS4#12 only the frontend calls this endpoint (MS4 used to call it once per distinct plan per run), so it matters less, pero sigue siendo ineficiente.
 - **Qué haría falta:** un `Include`/proyección única o un read model desnormalizado.
 
 ### ms2-gap-09 — Nombre en Consul
@@ -66,6 +69,11 @@
 - **Qué pasa:** `Nur.Tricenter.Access` 1.1.0 define `catalog.food:manage`, `catalog.recipe:manage` y `catalog.mealPlan:manage` en `CatalogPermission.PermissionsList` (MS2 crea una policy por cada uno), pero ningún endpoint los exige. Además `CatalogRoutes` (documentación de rutas del kernel, que hoy nadie lee) usa `/api/catalog/foods` sin `/v1`, declara `PUT /foods/{id}` (el código expone `PUT /foods`) y omite `GET /foods/category/{category}` y `GET /recipes/{recipeId}/nutritional-info`.
 - **Impacto:** bajo hoy; confunde a quien asigne scopes o lea el kernel como fuente de rutas.
 - **Qué haría falta:** decidir si `:manage` reemplaza a `create`+`edit` (y usarlo) o eliminarlo; alinear `CatalogRoutes` con los controllers (cambio en `nur-tricenter-shared-kernels`).
+
+### ms2-gap-13 — Composición sin backfill y una foto por cambio
+- **Qué pasa:** `meal-plan-composition-changed` is published only when a plan changes after MS2#6 / MS4#12 were deployed. A plan composed before has never been announced, so MS4 has no `PlanDayMenus` rows for it. MS2 also emits **one full snapshot per change** (a meal time added, a recipe assigned or removed), so composing a 30-day plan sends many messages; MS4 keeps the latest per day by `CreatedAt`.
+- **Impacto:** the days of a contract on such a plan stay `Scheduled` in MS4 (skipped and logged) until MS2 publishes its composition. The demo and `e2e-smoke.py` create fresh plans, so they are unaffected. Part of X-15.
+- **Qué haría falta:** touching the plan republishes it all (any composition change); a proper fix is a republish endpoint or job in MS2 (X-15). To cut the volume, coalesce snapshots per plan in the publisher or publish once per plan on an explicit "composition ready" action.
 
 ## Inconsistencias doc ↔ código
 
@@ -105,3 +113,14 @@ Contra main `ca0c9de`. Cada fila es algo que **esta ficha** decía mal y se corr
 | `README.md` | Operaciones dispara migraciones y seed por REST | No hay endpoint: migraciones por CLI (`--migrate`) o `Migrations__ApplyOnStartup`; seed por `Seed__Enabled` |
 | `README.md` | Consumidores de los eventos: MS1/MS3/MS4/MS5 | Hay colas para los cuatro, pero solo consumen MS3 y MS4 |
 | `messaging.md` | Texto basura de un agente después del diagrama Mermaid | Eliminado |
+
+### Actualización del 2026-10-31 (MS2#6, MS4#12)
+
+Contra los PRs mergeados MS2#6, MS4#12 y MS3#11. Cada fila es algo que **esta ficha** decía y ya no es cierto:
+
+| Dónde (ficha) | Decía | Ahora |
+|---|---|---|
+| `integrations.md`, `flows.md` F5, `README.md`, `api.md`, `service.yaml` | MS4 llama a `GET /meal-plans/{id}` con la service account `ms4-service`; es la única integración síncrona que toca a MS2 | Removed (MS4#12): MS4 makes no outbound HTTP; it projects `meal-plan-composition-changed` into `PlanDayMenus` |
+| `messaging.md`, `service.yaml` | MS2 publica 5 contratos; los cambios de composición no se publican | 6 contratos: `meal-plan-composition-changed` (MS2#6), una foto completa del plan por cambio |
+| `README.md` | Kernels en 1.2.0 | **1.6.0** (`Directory.Packages.props` after MS2#6) |
+| `README.md` | 5 de los 13 eventos de dominio se publican | 8 de 13 |

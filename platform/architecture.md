@@ -17,18 +17,19 @@ flowchart TB
   GW --> MS4[MS4 Calendario]
   GW --> MS5[MS5 Logística]
   MS2 & MS3 & MS4 & MS5 & ID -. se registran .-> CS
+  MS1[MS1 Clínica] -- outbox --> MQ
   MS2 -- outbox --> MQ
   ID -- outbox --> MQ
   MS3 -- outbox --> MQ
+  MS4 -- "own outbox<br/>(OutboxMessages)" --> MQ
   MS5 -- outbox --> MQ
   MQ -- colas msN.* --> MS2
   MQ -- colas msN.* --> MS3
   MQ -- colas msN.* --> MS4
-  MS3 -- service account vía gateway --> GW
-  MS4 -- service account vía gateway --> GW
-  MS3 -- "service account vía gateway<br/>GET Patient/{id}" --> MS1c[MS1 Clínica]
-  MS1[MS1 Clínica<br/>fuera del stack] -. outbox propio .-> MQ1{{paciente-published<br/>fuera de la topología}}
+  MQ -- colas msN.* --> MS5
 ```
+
+> **No REST between services.** The arrows above are all the service-to-service traffic: services only go through the gateway when a person or the frontend does. MS3 → MS4 (calendar and daily order), MS3 → MS1 (patient) and MS4 → MS2 (plan menu) used to be REST calls with a service account; they are now the events `contract-activated`, `production-order-ready`, `paciente-published` and `meal-plan-composition-changed`, which the consumer stores in a local projection. See [communication.md](./communication.md).
 
 > MS1 (`Nur-tricenter/ms1-gestion-clinica-nutricional`) está integrado al stack local desde 2026-10-31: Postgres, JWT, Consul como `clinica-nutricional` y compose de plataforma. Ver [X-13](../gaps/cross-service-gaps.md) y su [ficha](../services/ms1-clinic/README.md).
 
@@ -56,12 +57,12 @@ flowchart TB
 - Librería `Joseco.Communication.External.RabbitMQ` 1.1.0.
 - **Un exchange fanout por tipo de evento**, no durable. Los flags tienen que coincidir con la topología o RabbitMQ devuelve `406 PRECONDITION_FAILED`.
 - **Una cola por consumidor**: `{consumidor}.{exchange}` (p. ej. `ms4.recipe-updated`). Cada consumidor recibe su propia copia.
-- La topología de plataforma (18 exchanges, 34 colas) se importa desde `nur-tricenter-local/topology/rabbitmq-definitions.json`. Los publishers usan `declareDestination: true` (redeclaran su exchange con los mismos flags) y algunos workers declaran un sink propio fuera de la topología (`identity.default`, `catalog.default`, `nurtricenter.default`).
+- La topología de plataforma (22 exchanges, 38 colas) se importa desde `nur-tricenter-local/topology/rabbitmq-definitions.json`. Los publishers usan `declareDestination: true` (redeclaran su exchange con los mismos flags) y algunos workers declaran un sink propio fuera de la topología (`identity.default`, `catalog.default`, `nurtricenter.default`).
 - Catálogo completo: [../contracts/events.yaml](../contracts/events.yaml).
 
 ### Persistencia — PostgreSQL
 - Una instancia compartida en local (`nur-tricenter-postgres`, puerto host 5433) con **una base de datos por servicio**: `ms2-plans-and-recipes-catalog`, `nur_tricenter_identity`, `nur_tricenter_contracting` (MS3), `ms4_delivery_calendar`. MS5 usa Neon (Postgres gestionado) y MS1 un SQL Server propio fuera del stack.
-- Ningún servicio lee la BD de otro: los datos ajenos llegan por REST o por eventos (database-per-service).
+- No service reads another's database: data owned by others arrives as events and is stored in a local projection (database-per-service). No business REST is left between services.
 
 ### Kernels compartidos — `nur-tricenter-shared-kernels`
 | Paquete | Para qué |

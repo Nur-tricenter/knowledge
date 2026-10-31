@@ -38,7 +38,7 @@
 | Código | Cuándo |
 |---|---|
 | 400 | GUID mal formado |
-| 404 | `PATIENT_NOT_FOUND` (MS1 no tiene ese paciente; sin `Clinic__BaseUrl`, uno fuera de los 3 simulados) o `PLAN_NOT_FOUND` (el plan no está ni en la simulación ni en `CatalogPlans`) |
+| 404 | `PATIENT_NOT_FOUND` (el paciente no está en la proyección `ClinicPatients`, i.e. MS1 never published it; standalone, one outside the 3 simulated) o `PLAN_NOT_FOUND` (el plan no está ni en la simulación ni en `CatalogPlans`) |
 
 El plan se acepta si lo publicó MS2 y MS3 ya lo proyectó; por eso conviene esperar unos segundos tras sembrar el catálogo.
 
@@ -55,7 +55,7 @@ Devuelve el mismo `ContractResponse`. `404` si no existe.
 | 500 | Contrato no `Active`, o motivo vacío (excepción de dominio sin mapear) |
 
 ### `POST /api/v1/billing/charge-plan`
-**Para qué:** cobrar el contrato. Crea la factura, activa el contrato y deja en el outbox la fila `CreateSchedule` que luego crea el calendario en MS4.
+**Para qué:** cobrar el contrato. Crea la factura, activa el contrato y deja en el outbox la fila `CreateSchedule`, que el worker publica como evento `contract-activated`; MS4 lo consume y crea el calendario.
 ```json
 // request
 { "contractId": "…", "amount": 550.00, "invoiceNumber": "inv-2026-0500" }
@@ -94,11 +94,10 @@ No es idempotente: pagar dos veces el mismo contrato da 500 la segunda vez.
 ```
 | Código | Cuándo |
 |---|---|
-| 404 | `NO_CALENDARS`: MS4 no devolvió entregas para esa fecha (el job `resolve-daily-catalog` no corrió, o nadie tiene dirección) |
-| 422 | `NO_RECIPES`: hay entregas, pero ni el `menu` de MS4 ni la estructura simulada del plan traen recetas. No se crea la orden |
-| 500 | MS4 no responde o rechaza el token |
+| 404 | `NO_CALENDARS`: no hay entregas proyectadas para esa fecha (MS4 no publicó `production-order-ready`: el job `resolve-daily-catalog` no corrió, nadie tiene dirección, o el evento aún no llegó) |
+| 422 | `NO_RECIPES`: hay entregas, pero ni el `menu` del evento ni la estructura simulada del plan traen recetas. No se crea la orden |
 
-Si ya existe una orden para esa fecha, la devuelve sin consultar a MS4.
+MS3 does not call MS4: there is no 500 for "MS4 down" any more. If an order already exists for that date, it is returned as is.
 
 ### `POST /api/v1/production/packages`
 ```json
@@ -115,7 +114,7 @@ Si ya existe una orden para esa fecha, la devuelve sin consultar a MS4.
 ```json
 { "packageId": "…", "patientId": "…" }   // → 204
 ```
-Toma el nombre del paciente (de MS1; simulado si `Clinic__BaseUrl` no está configurado) y la dirección del calendario activo de MS4 de ese paciente; si no hay calendario, la etiqueta dice `"Address not found"`. `404` paquete o `PATIENT_NOT_FOUND`; `500` si no está `Assembled`.
+Toma el nombre del paciente (de la proyección `ClinicPatients` de MS1; simulado standalone) y la dirección de la entrega de ese paciente en `ScheduledDeliveries` (proyección de `production-order-ready` de MS4); si no hay calendario, la etiqueta dice `"Address not found"`. `404` paquete o `PATIENT_NOT_FOUND`; `500` si no está `Assembled`.
 
 ### `POST /api/v1/production/packages/validate`
 **Para qué:** control de calidad de **todos** los paquetes de una orden. Por cada uno aprobado deja en el outbox la fila `TransferToLogistics`, que luego se publica como `package-validated`.
@@ -143,9 +142,9 @@ Busca los paquetes por `ProductionOrderId` aunque la orden no exista en la base 
 
 ### `/sim/*` — simulaciones
 Endpoints auxiliares para ver lo que MS3 cree de los demás servicios. No son parte del contrato público.
-- `GET /sim/patients/{id}`, `GET /sim/catalog/plans/{id}`, `POST /sim/catalog/plans/structure`: datos de MS1 (reales con `Clinic__BaseUrl`, simulados si no) y simulados de MS2.
-- `GET /sim/calendars/active-tomorrow`: calendarios activos (reales de MS4 si está configurado; simulados si no).
-- `GET /sim/outgoing/{eventType}` (`CreateSchedule`, `TransferToLogistics`): filas del outbox con su estado. Es la forma de ver si MS4 aceptó el calendario.
+- `GET /sim/patients/{id}`, `GET /sim/catalog/plans/{id}`, `POST /sim/catalog/plans/structure`: patients from the `ClinicPatients` projection of MS1's events (with `Projections__Enabled=true`; the 3 simulated patients standalone) and simulated plans of MS2.
+- `GET /sim/calendars/active-tomorrow`: next-day deliveries from the `ScheduledDeliveries` projection of MS4's `production-order-ready` (with `Projections__Enabled=true`; simulated calendars standalone). Not a call to MS4.
+- `GET /sim/outgoing/{eventType}` (`CreateSchedule`, `TransferToLogistics`): outbox rows with their state. `CreateSchedule` rows are published as `contract-activated`; `Published` only means the broker accepted it, not that MS4 created the calendar.
 
 ## Mapeo de errores
 Configurado con `UseDefaultExceptionHandler()` en `Nurtricenter.Api/Program.cs` y `ThrowError`/`SendNotFoundAsync` en cada endpoint. **No hay un mapeo central de excepciones de dominio.**

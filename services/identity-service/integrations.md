@@ -16,11 +16,12 @@ Aunque identity no llama a nadie, **casi todos dependen de él de forma síncron
 
 | Servicio | Llamada | Código del cliente | Si identity no responde |
 |---|---|---|---|
-| MS4 | `POST /api/identity-service/v1/auth/login` como `ms4-service` | `ms4-delivery-schedule-management/src/Infrastructure/Catalog/ServiceAccountTokenHandler.cs` | El job de catálogo no puede llamar a MS2; los días quedan en `Scheduled` |
-| MS3 | `POST /api/identity-service/v1/auth/login` como `ms3-service` | `ms3-contract-and-production/…/DeliveryCalendar/DeliveryCalendarOptions.cs` (`IdentityClientOptions.LoginPath`) | MS3 no puede crear calendarios ni leer la orden de producción en MS4 |
+| ~~MS4~~, ~~MS3~~ | ~~login as `ms4-service` / `ms3-service`~~ | removed in MS4#12 / MS3#11 (their token handlers and `Identity` options were deleted) | Nothing: MS3 and MS4 make no outbound HTTP any more. The accounts still exist in identity for the demo console |
 | `nur-tricenter-local/scripts/start-stack.*` | Login del `admin` y `POST /api/identity-service/v1/users` para crear `ms4-service` y `ms3-service` (409 = ya existe) | scripts | El script reintenta el login 24 veces (el gateway tarda ~30 s en ver a identity en Consul) y luego aborta |
 
 La **validación** del token, en cambio, no necesita a identity: cada servicio la hace localmente con la clave compartida. Si identity se cae, los tokens ya emitidos siguen sirviendo hasta que vencen (3600 s).
+
+> **Historical diagram.** The flow below (MS4 logs in as `ms4-service` and calls MS2) was removed in MS4#12: MS4 no longer calls MS2 or identity. It shows how a service account would authenticate.
 
 ```mermaid
 sequenceDiagram
