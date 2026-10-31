@@ -52,6 +52,18 @@ endpoints:
     summary: Única entrada de paquetes en main. Recibe un array de paquetes, valida los pacientes en MS1 y los agrega a la ruta de hoy más reciente. Anónimo.
     idempotent: false
   - method: GET
+    path: /api/v1/routes/{routeId}
+    scope: null
+    callers: [ops]
+    summary: Ruta de cualquier fecha con sus entregas (404 si no existe). Gap X-17.
+    idempotent: true
+  - method: GET
+    path: /api/v1/deliveries
+    scope: null
+    callers: [ops]
+    summary: Entregas por packageId (MS3) y/o deliveryDayId (MS4), con su ruta; 400 sin filtros. Gap X-17.
+    idempotent: true
+  - method: GET
     path: /api/v1/couriers/{courierId}/route/today
     scope: null
     callers: [frontend]

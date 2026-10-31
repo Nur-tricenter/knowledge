@@ -13,6 +13,9 @@
 | POST | `/schedule` | MS3 | `deliveryCalendar.calendar:create` | sí (por `contractId`) |
 | GET | `/calendars/active-tomorrow?date=` | MS3 | `deliveryCalendar.productionOrder:read` | sí |
 | GET | `/calendars/{id}` | Frontend | `deliveryCalendar.calendar:read` | sí |
+| GET | `/calendars/by-contract/{contractId}` | Frontend, demo console | `deliveryCalendar.calendar:read` | sí |
+| GET | `/calendars/by-patient/{patientId}` | Frontend, demo console | `deliveryCalendar.calendar:read` | sí |
+| GET | `/calendars/days/{dayId}/delivery-link` | Frontend, demo console | `deliveryCalendar.calendar:read` | sí |
 | PUT | `/calendars/{id}/dates` | Frontend | `deliveryCalendar.calendar:edit` | sí |
 | POST | `/calendars/{id}/addresses` | Frontend | `deliveryCalendar.calendar:edit` | sí |
 | POST | `/calendars/{id}/cancel-day` | Frontend | `deliveryCalendar.calendar:edit` | no (el 2.º intento da 422) |
@@ -49,6 +52,20 @@
 
 ### `GET /api/v1/calendars/{id}`
 Calendario completo con todos los días, sin filtrar por estado. `404` si no existe.
+
+### `GET /api/v1/calendars/by-contract/{contractId}` ([MS4#11](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/11))
+El calendario que creó el contrato de MS3 (a lo sumo uno: `POST /schedule` es idempotente por contrato). Misma forma que `GET /calendars/{id}`. `404` si MS3 todavía no lo creó.
+
+### `GET /api/v1/calendars/by-patient/{patientId}` ([MS4#11](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/11))
+Todos los calendarios del paciente, del más nuevo al más viejo. Lista vacía si no tiene.
+
+### `GET /api/v1/calendars/days/{dayId}/delivery-link` ([MS4#11](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/11))
+Sigue un día hasta la entrega de MS5 que lo lleva (proyección `DeliveryRouteLinks`, la última gana).
+```json
+{ "dayId": 259, "calendarId": 49, "date": "2026-11-01", "dayStatus": "Failed",
+  "deliveryId": "de93…", "routeId": "855d…", "linkedAt": "2026-10-31T05:50:33Z" }
+```
+`deliveryId`/`routeId`/`linkedAt` son `null` hasta que llega `delivery-added-to-route` (consistencia eventual: consultar en bucle). `404` solo si el día no existe.
 
 ### `PUT /api/v1/calendars/{id}/dates`
 ```json

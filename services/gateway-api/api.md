@@ -16,11 +16,12 @@
 ## Pipeline de una request
 Orden en `Program.cs`:
 1. `UseRouting()`
-2. `UseHealthChecks()` → mapea `/health` y `/health-ui` (`Extensions/ApplicationBuilderExtensions.cs`).
-3. `UseCorrelationId()` → middleware de `X-Correlation-Id`.
-4. `MapReverseProxy()` → YARP con las rutas de `ConsulYarpConfigProvider`.
+2. `UseGatewayCors()` → solo si `Cors:AllowedOrigins` tiene orígenes ([gateway#1](https://github.com/Nur-tricenter/nur-tricenter-api-gateway/pull/1)). Contesta el preflight y agrega los headers CORS a toda respuesta proxeada.
+3. `UseHealthChecks()` → mapea `/health` y `/health-ui` (`Extensions/ApplicationBuilderExtensions.cs`).
+4. `UseCorrelationId()` → middleware de `X-Correlation-Id`.
+5. `MapReverseProxy()` → YARP con las rutas de `ConsulYarpConfigProvider`.
 
-No hay `UseHttpsRedirection`, CORS, rate limiting ni manejador global de excepciones.
+No hay `UseHttpsRedirection`, rate limiting ni manejador global de excepciones. CORS: `Cors:AllowedOrigins` vacío en `appsettings.json` (apagado); `http://localhost:15100` (demo console) en `appsettings.Development.json`, que es lo que usa el stack local. Cualquier método y header, sin credenciales, expone `X-Correlation-Id`.
 
 ## Detalle por endpoint
 

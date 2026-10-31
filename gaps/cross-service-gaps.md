@@ -21,7 +21,7 @@ Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04,
 | X-14 | Escalada de privilegios: `POST /users` de identity acepta `platform:*` | high | identity, todos | abierto |
 | X-15 | Sin backfill: los consumidores no conocen lo publicado antes de que existiera su cola | medium | MS2, MS3, MS4 | abierto |
 | X-16 | MS5 agrega el paquete a la ruta de **hoy**, pero MS3 produce para la entrega de **mañana** | medium | MS3, MS5 | resuelto (kernel#4, MS3#5, MS5#4) |
-| X-17 | Faltan endpoints de consulta para seguir un caso de punta a punta | low | MS3, MS4, MS5 | abierto |
+| X-17 | Faltan endpoints de consulta para seguir un caso de punta a punta | low | MS3, MS4, MS5 | en revisión ([MS4#11](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/11), [MS3#10](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/10), [MS5#9](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/9)) |
 
 ## Detalle
 
@@ -139,3 +139,5 @@ MS3 produce el día D-1 para la entrega del día D (`active-tomorrow`). El consu
 
 ### X-17 — Seguir un caso de punta a punta exige leer las bases
 Para encadenar un contrato con su calendario, sus paquetes y su entrega no hay endpoints: MS4 no busca calendarios por `contractId` ni por paciente, MS3 no lista los paquetes de una orden y MS5 no busca entregas por `packageId`. `e2e-smoke.py` lo resuelve leyendo las BD. La interfaz visual que muestre dónde se consume cada cosa va a necesitar esas consultas.
+
+> **2026-10-31 — PR abiertos.** MS4 ([MS4#11](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/11)): `GET /calendars/by-contract/{contractId}`, `GET /calendars/by-patient/{patientId}` y `GET /calendars/days/{dayId}/delivery-link` (entrega y ruta de MS5 desde `DeliveryRouteLinks`), con el scope existente `deliveryCalendar.calendar:read` (sin cambio en el kernel). MS3 ([MS3#10](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/10)): `GET /production/orders/{id}/packages`. MS5 ([MS5#9](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/9)): `GET /routes/{routeId}` (cualquier fecha) y `GET /deliveries?packageId=&deliveryDayId=`. Verificados en el stack local por el gateway con el caso de `e2e-smoke.py`. Al mergear, `e2e-smoke.py` puede dejar de leer las BD. Hallazgo de paso: MS3 no guarda la orden diaria (ms3-gap-17), así que la consulta de MS3 busca los paquetes aunque la orden no exista.

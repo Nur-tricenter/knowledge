@@ -18,6 +18,7 @@
 | ms3-gap-14 | `daily-order` se congela al primer pedido de la fecha | medium | MS4 | abierto |
 | ms3-gap-15 | Un paciente puede tener varios contratos activos a la vez | low | MS4 | abierto (decisión de negocio) |
 | ms3-gap-16 | Un `GET` con `Content-Type: application/json` y sin cuerpo responde 400 | low | — | abierto |
+| ms3-gap-17 | `daily-order` no guarda la orden: cada llamada devuelve un `productionOrderId` nuevo | medium | — | abierto |
 
 ## Detalle
 
@@ -86,6 +87,11 @@ Los gaps 12 a 16 salieron de la prueba integral en el stack local del 2026-10-28
 
 ### ms3-gap-14 — Orden de producción congelada
 Si ya existe la orden de una fecha, `daily-order` la devuelve sin volver a pedir `active-tomorrow`. Los días que MS4 deja listos después (contrato pagado o dirección cargada más tarde) no entran en `recipesSummary`, aunque se les puede crear el paquete igual (`POST /production/packages` no valida que el paciente esté en la orden). Opciones: reconsolidar mientras la orden no esté en producción, o fijar un horario de corte que MS4 también respete.
+
+### ms3-gap-17 — La orden diaria nunca se guarda
+- **Qué pasa:** `GetDailyOrderQueryHandler` hace `AddAsync` de la orden pero ningún `CommitAsync` (es una query). En el stack local, el 2026-10-31, `DailyProductionOrders` tenía 0 filas y `Packages` varias, cada una con un `ProductionOrderId` que no existe.
+- **Impacto:** cada `GET daily-order` devuelve un id nuevo; los paquetes de una misma fecha quedan repartidos en "órdenes" distintas y `validate` solo ve los de su id. Contradice ms3-gap-14 (la orden "congelada" no llega a existir).
+- **Qué haría falta:** decidir si `daily-order` crea la orden (commit, y entonces aplica ms3-gap-14) o si la consolidación pasa a un comando explícito. Mientras tanto, `GET /production/orders/{id}/packages` ([MS3#10](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/10)) busca los paquetes aunque la orden no exista.
 
 ### ms3-gap-15 — Varios contratos activos por paciente
 `POST /contracts` no impide que un paciente con un contrato activo contrate otro, y MS4 crea un calendario por contrato: el paciente termina con dos entregas el mismo día. `charge-control` sí rechaza el caso (`ACTIVE_CONTRACT`). Es una decisión de negocio; también afecta el enlace por paciente de MS4 (ver ms4 `messaging.md`).
