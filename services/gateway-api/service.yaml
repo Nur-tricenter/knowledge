@@ -63,7 +63,7 @@ gaps:
     summary: No valida JWT en el borde; MS3 y MS5, que tampoco lo validan, quedan abiertos a través del gateway.
     severity: high
   - id: gateway-gap-02
-    summary: Sin CORS, rate limiting, timeouts ni reintentos propios (rigen los defaults de YARP).
+    summary: Sin rate limiting, timeouts ni reintentos propios (rigen los defaults de YARP). CORS configurable con Cors:AllowedOrigins en revisión (gateway#1).
     severity: medium
   - id: gateway-gap-03
     summary: Polling de 30 s sin health checks de YARP; 502 hacia instancias caídas y 404 para servicios recién levantados.

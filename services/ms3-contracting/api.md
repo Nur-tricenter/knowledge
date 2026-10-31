@@ -21,6 +21,7 @@
 | POST | `/production/packages/assemble` | ops | — | no |
 | POST | `/production/packages/label` | ops | — | no |
 | POST | `/production/packages/validate` | ops | — | no |
+| GET | `/production/orders/{id}/packages` | ops, demo console | — | sí |
 | GET | `/sim/patients/{id}`, `/sim/catalog/plans/{id}`, `/sim/calendars/active-tomorrow`, `/sim/outgoing/{eventType}`, POST `/sim/catalog/plans/structure` | ops | — | sí |
 | GET | `/health` | Consul | anónimo | sí |
 
@@ -130,6 +131,15 @@ Toma el nombre del paciente (de MS1; simulado si `Clinic__BaseUrl` no está conf
 | 400 | `batchValidated` es falso, o `totalValidatedCount` (si > 0) no coincide con los paquetes de la orden |
 | 404 | La orden no tiene paquetes |
 | 500 | Algún paquete no está `Labeled`: los anteriores del lote **ya quedaron validados** (ver `ms3-gap-04`) |
+
+### `GET /api/v1/production/orders/{id}/packages` ([MS3#10](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/10))
+**Para qué:** ver los paquetes de una orden y en qué paso están (gap X-17).
+```json
+{ "productionOrderId": "…", "productionDate": null, "orderStatus": null, "totalPackages": 1,
+  "packages": [ { "packageId": "…", "patientId": "…", "catalogPlanId": "…", "status": "Validated",
+                  "trackingNumber": "NTR-D6127B59-20261031", "deliveryAddress": "Av. Banzer 123, Santa Cruz", "validatedAt": "…" } ] }
+```
+Busca los paquetes por `ProductionOrderId` aunque la orden no exista en la base (ver ms3-gap-17): en ese caso `productionDate` y `orderStatus` vienen `null`. `404` solo si no hay ni orden ni paquetes.
 
 ### `/sim/*` — simulaciones
 Endpoints auxiliares para ver lo que MS3 cree de los demás servicios. No son parte del contrato público.

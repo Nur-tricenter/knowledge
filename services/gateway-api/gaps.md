@@ -3,7 +3,7 @@
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
 | gateway-gap-01 | Sin validación de JWT en el borde: MS3 y MS5 quedan abiertos a través del gateway | high | MS3, MS5 | abierto (X-03, X-11) |
-| gateway-gap-02 | Sin CORS, rate limiting, timeouts ni reintentos propios | medium | — | abierto |
+| gateway-gap-02 | Sin CORS, rate limiting, timeouts ni reintentos propios | medium | — | parcial: CORS configurable en revisión ([gateway#1](https://github.com/Nur-tricenter/nur-tricenter-api-gateway/pull/1)) |
 | gateway-gap-03 | Hasta 30 s de rutas obsoletas: 502 hacia instancias caídas, 404 para servicios recién levantados | medium | — | abierto |
 | gateway-gap-04 | `/health` no tiene checks y `/health-ui` solo se monitorea a sí mismo | low | — | abierto |
 | gateway-gap-05 | No se registra en Consul y no tiene observabilidad (sin OpenTelemetry; el correlation id no se loguea) | low | — | abierto |
@@ -22,6 +22,7 @@
 - **Qué pasa:** no hay `AddCors`, `AddRateLimiter`, ni `HttpRequest`/`SessionAffinity`/`HealthCheck` en los `ClusterConfig`. Rigen los valores por defecto de YARP.
 - **Impacto:** un frontend en otro origen depende de que cada servicio configure CORS; un cliente abusivo llega sin freno a los servicios; una instancia lenta retiene la request hasta el timeout por defecto de YARP.
 - **Qué haría falta:** CORS con los orígenes del frontend, un rate limiter por IP o por `sub`, y un `ActivityTimeout` explícito por cluster.
+- **2026-10-31:** CORS en [gateway#1](https://github.com/Nur-tricenter/nur-tricenter-api-gateway/pull/1) (`Cors:AllowedOrigins`, apagado en producción). Siguen pendientes el rate limiting y los timeouts.
 
 ### gateway-gap-03 — La tabla va hasta 30 s atrasada
 - **Qué pasa:** polling cada 30 s, sin blocking queries de Consul ni health checks activos/pasivos de YARP.

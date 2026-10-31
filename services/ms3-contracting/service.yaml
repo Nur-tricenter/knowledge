@@ -103,6 +103,12 @@ endpoints:
     summary: Control de calidad de todos los paquetes de una orden; cada uno aprobado deja en el outbox un evento para MS5.
     idempotent: false
   - method: GET
+    path: /api/v1/production/orders/{id}/packages
+    scope: null
+    callers: [ops]
+    summary: Paquetes de una orden con estado, tracking, dirección y validación (404 si no hay orden ni paquetes). Gap X-17.
+    idempotent: true
+  - method: GET
     path: /api/v1/sim/patients/{id}
     scope: null
     callers: [ops]
@@ -246,3 +252,6 @@ gaps:
   - id: ms3-gap-16
     summary: Un GET con Content-Type application/json y sin cuerpo responde 400.
     severity: low
+  - id: ms3-gap-17
+    summary: GET daily-order agrega la orden pero nunca hace commit; cada llamada devuelve un productionOrderId nuevo que no existe en la base.
+    severity: medium

@@ -16,12 +16,14 @@
 | POST | `/routes` | Operaciones | — (anónimo) | no (cada llamada crea una ruta) |
 | POST | `/packages/deliveries` | Operaciones (única entrada de paquetes en `main`) | — (anónimo) | no (duplica entregas) |
 | GET | `/couriers/{courierId}/route/today` | App del repartidor | — (anónimo) | sí |
+| GET | `/routes/{routeId}` | Operaciones, demo console | — (anónimo) | sí |
+| GET | `/deliveries?packageId=&deliveryDayId=` | Operaciones, demo console | — (anónimo) | sí |
 | POST | `/routes/{routeId}/start` | App del repartidor | — (anónimo) | no (el 2.º intento da 422) |
 | POST | `/routes/{routeId}/deliveries/{deliveryId}/deliver` | App del repartidor | — (anónimo) | no (el 2.º intento da 422) |
 | POST | `/routes/{routeId}/deliveries/{deliveryId}/fail` | App del repartidor | — (anónimo) | no (el 2.º intento da 422) |
 | GET | `/health` | Consul | anónimo | sí |
 
-No existen endpoints de lectura de un repartidor, de una ruta por id ni de listados, aunque los `201 Created` devuelven un header `Location` que apunta a ellos (`/api/v1/couriers/{id}`, `/api/v1/routes/{id}`, `/api/v1/packages/deliveries/{routeId}`): esas URLs dan 404/405.
+Desde [MS5#9](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/9) hay ruta por id y búsqueda de entregas (abajo). No existen endpoints de lectura de un repartidor ni de listados, aunque los `201 Created` devuelven un header `Location` que apunta a ellos (`/api/v1/couriers/{id}`, `/api/v1/routes/{id}`, `/api/v1/packages/deliveries/{routeId}`): esas URLs dan 404/405.
 
 ## Detalle por endpoint
 
@@ -124,6 +126,19 @@ Response `200`:
 | Código | Cuándo |
 |---|---|
 | 404 | `Courier.NotFound` o `Route.NoRouteForToday` |
+
+### `GET /api/v1/routes/{routeId}` ([MS5#9](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/9))
+Ruta de **cualquier** fecha (no solo hoy) con todas sus entregas, en orden de secuencia. `404` `Route.NotFound`.
+```json
+{ "id": "…", "courierId": "…", "scheduledDate": "2026-11-01", "status": "Completed", "createdAt": "…",
+  "deliveries": [ { "deliveryId": "…", "routeId": "…", "sequenceOrder": 1, "status": "Failed", "packageId": "…(GUID de MS3)",
+                    "deliveryDayId": 259, "patientId": "…", "patientName": "Ana", "patientPhone": null,
+                    "address": "Av. Banzer 123, Santa Cruz", "latitude": -17.78, "longitude": -63.18,
+                    "deliveredAt": null, "evidencePhotoUrl": null, "failureReason": "Nadie en el domicilio", "createdAt": "…" } ] }
+```
+
+### `GET /api/v1/deliveries?packageId=&deliveryDayId=` ([MS5#9](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/9))
+Sigue un paquete de MS3 o un día de MS4 hasta su entrega (gap X-17). Al menos un filtro; si no, `400` `Delivery.LookupFilterRequired`. Lista vacía si no hay coincidencias. Cada ítem: `{ delivery, courierId, scheduledDate, routeStatus }` (`delivery` con la forma de arriba).
 
 ### `POST /api/v1/routes/{routeId}/start`
 **Para qué:** el repartidor sale de la sucursal. Calcula la secuencia de entrega y pasa la ruta y todas sus entregas a `InProgress`.

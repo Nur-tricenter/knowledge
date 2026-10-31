@@ -49,6 +49,24 @@ endpoints:
     callers: [frontend]
     summary: Calendario completo con todos sus días y estados.
     idempotent: true
+  - method: GET
+    path: /api/v1/calendars/by-contract/{contractId}
+    scope: deliveryCalendar.calendar:read
+    callers: [frontend]
+    summary: Calendario creado para un contrato de MS3 (404 si no existe). Gap X-17.
+    idempotent: true
+  - method: GET
+    path: /api/v1/calendars/by-patient/{patientId}
+    scope: deliveryCalendar.calendar:read
+    callers: [frontend]
+    summary: Calendarios de un paciente, el más nuevo primero (lista vacía si no tiene). Gap X-17.
+    idempotent: true
+  - method: GET
+    path: /api/v1/calendars/days/{dayId}/delivery-link
+    scope: deliveryCalendar.calendar:read
+    callers: [frontend]
+    summary: Estado del día y la entrega/ruta de MS5 enlazada por delivery-added-to-route (null hasta que MS5 la rutea). Gap X-17.
+    idempotent: true
   - method: PUT
     path: /api/v1/calendars/{id}/dates
     scope: deliveryCalendar.calendar:edit
