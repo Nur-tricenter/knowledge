@@ -125,7 +125,7 @@ No hay transiciones de `EstadoPlan` después de crear el plan.
 Reglas que **no** existen y que el negocio probablemente espera (ver gaps): `CI` único, plan solo con consulta aprobada, estado del plan derivado del vencimiento, próximo control posterior a hoy.
 
 ## Evento de dominio
-`PacienteCreated(PacienteId, CI, Nombre, Apellido)` (`Events/PacienteCreated.cs`). Se despacha con MediatR dentro de `UnitOfWork.CommitAsync`, antes de `SaveChangesAsync`, y `SaveInOutboxWhenPacienteCreated` lo guarda en `OutboxMessages` en la misma transacción. Hoy sale **con datos incorrectos**: ver [messaging.md](./messaging.md) y ms1-gap-04.
+`PacienteCreated(PacienteId, CI, Nombre, Apellido)` (`Events/PacienteCreated.cs`). Se despacha con MediatR dentro de `UnitOfWork.CommitAsync`, antes de `SaveChangesAsync`, y `SaveInOutboxWhenPacienteCreated` lo guarda en `OutboxMessages` en la misma transacción. `Paciente.Crear` asigna el `Id` antes de armar el evento y lo pasa en el orden del constructor `(pacienteId, ci, nombre, apellido)` (corregido en MS1#1); ver [messaging.md](./messaging.md).
 
 ## Datos que son copia de otro servicio
 Ninguno. MS1 no consume eventos ni llama a otros servicios.

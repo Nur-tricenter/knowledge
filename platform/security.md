@@ -31,7 +31,7 @@ Formato: `{servicio}.{recurso}:{acción}`.
 | MS4 Calendario | `deliveryCalendar.calendar:{read,create,edit}`, `deliveryCalendar.productionOrder:read`, `deliveryCalendar.deliveryResult:edit`, `deliveryCalendar.catalogResolution:manage` |
 | Identity | `identity.user:{login,read,create,edit,manage}`, `identity.role:{…}`. `identity:*` no es un scope: es un claim bandera (`"true"`) que solo lleva el token del admin sembrado, y nunca se expande |
 | MS5 Logística | _no tiene scopes en el kernel_ (no existe `LogisticsPermission`) y no valida JWT: llama a `AddAuthorization()`/`UseAuthorization()` sin `AddSecurity()`, y sus 7 endpoints de negocio son anónimos |
-| MS1 Clínica | _sin definir_: no valida JWT y todos sus endpoints son anónimos (repo externo, no integrado) |
+| MS1 Clínica | _sin definir_: valida JWT (`AddSecurity` sin permisos) y exige "usuario autenticado" en todo salvo `/health`; falta una clase de permisos de MS1 en el kernel |
 | MS3 Contratación | _sin definir_: sus endpoints son anónimos (X-11) |
 
 - `platform:*` (que tiene el `admin` sembrado) se **expande al hacer login** en todos los scopes concretos que conoce el kernel (`PlatformPermissions.Expand`): identity, catálogo y calendario. No hay scopes de MS3 ni de MS5 porque no existen en el kernel.
@@ -58,6 +58,6 @@ Cuando agregues una service account, documéntala aquí, en `start-stack.*` y en
 ## Riesgos conocidos
 - **Autorización por objeto (BOLA):** los scopes dicen *qué tipo* de cliente llama, no *de quién* es el recurso. En MS4, un token con `deliveryCalendar.calendar:edit` puede editar el calendario de cualquier paciente. Cerrarlo requiere mapear el `sub` del token al `PatientId`, que vive en MS1.
 - **Escalada de privilegios en identity:** `POST /api/v1/users` (scope `identity.user:manage`) solo rechaza `identity:*`; acepta `platform:*`, así que quien tenga `identity.user:manage` puede crear un administrador completo. Ver la [ficha de identity](../services/identity-service/gaps.md).
-- **El gateway no valida tokens:** la protección depende de cada servicio. MS3, MS5 y MS1 quedan abiertos a través del gateway.
+- **El gateway no valida tokens:** la protección depende de cada servicio. MS3 y MS5 quedan abiertos a través del gateway; MS1 exige un token válido pero sin scope.
 - **Clave simétrica compartida:** quien tenga la clave puede emitir tokens. Una evolución natural es pasar a firma asimétrica (RS256 + JWKS).
 - **MS5 sin autenticación:** cualquiera que llegue al gateway puede crear repartidores y rutas, cargar paquetes y marcar entregas como entregadas o fallidas. Ver [../services/ms5-logistics/gaps.md](../services/ms5-logistics/gaps.md) (ms5-gap-01) y X-03.

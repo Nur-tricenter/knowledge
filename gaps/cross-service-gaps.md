@@ -8,7 +8,7 @@ Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04,
 | X-01 | El ciclo de entrega solo cierra si `PackageId` es el `packId` de MS4 | high | MS3, MS5, MS4 | resuelto (kernel#5, MS3#6, MS5#5, MS4#6 y #8); falta la evidencia en `DeliveryCompleted` |
 | X-02 | De los 10 exchanges de logística, solo los 3 de entrega tienen consumidor (MS4) | medium | MS5, consumidores | parcial |
 | X-03 | MS5 no valida JWT ni tiene scopes en el kernel | high | MS5, kernels | abierto |
-| X-04 | MS1 tiene repo, pero fuera de la org y sin integrar (MS3 usa pacientes simulados; MS5 dejó de llamar a MS1 en MS5#4) | high | MS1, MS3, MS5 | abierto (parcial: MS5) |
+| X-04 | MS1 integrado a la plataforma desde 2026-10-31; MS3 sigue con pacientes simulados y MS5 no llama a MS1 (MS5#4) | medium | MS1, MS3, MS5 | abierto (parcial) |
 | X-05 | La ruta de identity en el gateway está documentada de dos formas | low | identity, kernels | abierto |
 | X-06 | Hay colas declaradas sin consumidor | low | todos | abierto |
 | X-07 | Versiones mezcladas de los kernels | medium | todos | abierto |
@@ -17,7 +17,7 @@ Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04,
 | X-10 | Paquetes MS3 → MS5: el consumidor de `package-validated` está solo en la rama `dev` de MS5, y falta el `packId` de MS4 en el evento | medium | MS3, MS4, MS5 | resuelto (consumidor en `main` de MS5; `DeliveryDayId` en kernel 1.4.0: kernel#5, MS3#6, MS5#5; MS4#5 queda como respaldo por paciente; MS4#8 los reúne) |
 | X-11 | MS3 no valida JWT ni tiene scopes en el kernel | high | MS3, kernels | abierto |
 | X-12 | El stack local no levanta: identity fuera del compose e include/builds de MS1 inexistentes | high | local, identity, MS1, todos | resuelto (nur-tricenter-local#7) |
-| X-13 | MS1 no es integrable: SQL Server propio, sin Consul, sin JWT, contrato de evento fuera del kernel | high | MS1, MS3, MS4, MS5 | abierto |
+| X-13 | MS1 no era integrable: SQL Server propio, sin Consul, sin JWT, evento defectuoso | high | MS1, MS3, MS4, MS5 | resuelto parcialmente (MS1#1, local#8); faltan scopes y consumidores |
 | X-14 | Escalada de privilegios: `POST /users` de identity acepta `platform:*` | high | identity, todos | abierto |
 | X-15 | Sin backfill: los consumidores no conocen lo publicado antes de que existiera su cola | medium | MS2, MS3, MS4 | abierto |
 | X-16 | MS5 agrega el paquete a la ruta de **hoy**, pero MS3 produce para la entrega de **mañana** | medium | MS3, MS5 | resuelto (kernel#4, MS3#5, MS5#4) |
@@ -51,6 +51,8 @@ MS5 solo llama a `AddAuthorization()`, sin `AddSecurity()` del kernel, y no exis
 **Confirmado por MS5 (2026-10-24):** ningún endpoint tiene `RequireAuthorization` ni `[Authorize]`; a través del gateway cualquiera puede crear repartidores y rutas, cargar paquetes y cerrar entregas. MS5 tampoco tiene service account (su única llamada saliente va sin token).
 
 ### X-04 — MS1 sin integrar
+> **2026-10-31:** MS1 ya está en la org (`ms1-gestion-clinica-nutricional`) e integrado al stack local (X-13). Expone `POST /api/v1/patients/contact-information`; quedan pendientes que MS3 deje los pacientes simulados y el vínculo `sub` → paciente (X-08).
+
 > **2026-10-28:** MS1 **sí tiene código**, en un repo fuera de la org: `Juandcode/ClinicaNutricionalMicroservicio1` (lo clona `setup-project` como `ms1-clinica-nutricional`). No expone `POST /api/v1/patients/contact-information` ni guarda teléfono ni dirección, así que no cumple el contrato que espera MS5. Por qué no se puede enchufar todavía: X-13. Ficha: [ms1-clinic](../services/ms1-clinic/README.md) (`draft`).
 
 > **2026-10-29:** MS5 ya no llama al ClinicService ([MS5#4](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/4)): quitó `IClinicService` y la URL del mock. El nombre del paciente viaja en `PackageValidated.PatientName` (kernel 1.3.0) y MS5 lo guarda en el paquete; `POST /packages/deliveries` lo recibe como `patientName`. Queda pendiente el teléfono y que MS3 deje de usar pacientes simulados.
@@ -107,7 +109,9 @@ Estado original en `nur-tricenter-local` (`main` 4a1d700, antes de #7):
 **Qué haría falta:** volver a incluir `identity.compose.yml` y quitar MS1 del compose y de los scripts hasta que tenga un fragmento de plataforma (X-13). **Resuelto en [nur-tricenter-local#7](https://github.com/Nur-tricenter/nur-tricenter-local/pull/7)** (mergeado el 2026-10-28): vuelve el include de identity, MS1 queda comentado en el compose, y el PR además crea las BD que falten en un volumen viejo, revisa todos los builds y agrega `scripts/e2e-smoke.py`.
 
 ### X-13 — MS1 no es integrable todavía
-Para entrar al stack, MS1 necesita lo que ya tienen los demás y hoy no tiene:
+> **2026-10-31:** resuelto en su mayor parte con [MS1#1](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional/pull/1) y [nur-tricenter-local#8](https://github.com/Nur-tricenter/nur-tricenter-local/pull/8) (mergeados): Postgres, `--migrate`, JWT (solo "autenticado", sin scopes), Consul/gateway, `ms1.compose.yml` y evento corregido. Verificado con el stack completo y `e2e-smoke.py`. **Sigue abierto:** scopes de MS1 en `Nur.Tricenter.Access`, que alguien consuma `paciente-published` y el contrato de ese evento (sigue local, fuera del kernel y de la topología). Lo de abajo describe el estado previo.
+
+Para entrar al stack, MS1 necesitaba lo que ya tienen los demás y no tenía:
 - **Repo:** desde 2026-10-31 está en la org (`ms1-gestion-clinica-nutricional`, un solo commit). `setup-project` de `nur-tricenter-local` todavía clona el repo viejo de `Juandcode`.
 - **Persistencia:** usa SQL Server. La cadena ya sale de `ConnectionStrings:DefaultConnection` (antes estaba hardcodeada), pero el valor por defecto sigue siendo `localhost\SQLEXPRESS` con `Trusted_Connection`. No puede usar el Postgres compartido ni tiene base en `01-create-databases.sql`.
 - **Descubrimiento:** no se registra en Consul, así que el gateway no lo rutea.

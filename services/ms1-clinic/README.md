@@ -2,7 +2,7 @@
 
 > **Owner:** Diego Cabrera (@Juandcode) · **Repo:** [Nur-tricenter/ms1-gestion-clinica-nutricional](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional) (desde 2026-10-31; antes [Juandcode/ClinicaNutricionalMicroservicio1](https://github.com/Juandcode/ClinicaNutricionalMicroservicio1)) · **Estado de la ficha:** draft
 
-> ⚠ **Ya está en la org, pero no integrado a la plataforma.** El repo nuevo tiene un solo commit (`ee1d631`, "first commit") y es el mismo código con pocos cambios: la cadena de conexión ya sale de configuración (`ConnectionStrings:DefaultConnection`), hay un workflow de tests y una migración `FixOutboxModel`. Sigue sin registrarse en Consul, sin gateway, sin validar JWT, con su propio SQL Server y sin `ms1.compose.yml`, que `nur-tricenter-local` tampoco incluye (MS1 está comentado en el compose). Ningún otro servicio lo llama de verdad. Esta ficha documenta **lo que hace el código** (rama `main`, 2026-10-31) y, por separado, [lo que la plataforma espera de MS1](#lo-que-la-plataforma-espera-de-ms1).
+> ✅ **Integrado a la plataforma desde el 2026-10-31** ([MS1#1](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional/pull/1) y [nur-tricenter-local#8](https://github.com/Nur-tricenter/nur-tricenter-local/pull/8), mergeados). Corre en el stack local junto a MS2–MS5: PostgreSQL propio (`ms1_clinica_nutricional`), job `--migrate`, JWT de identity en todas las rutas salvo `/health`, registro en Consul como `clinica-nutricional` (gateway: `/api/clinica-nutricional/v1/...`) y `ms1.compose.yml`. **Pendiente:** no hay scopes de MS1 en `Nur.Tricenter.Access` (se exige "token válido", no un permiso), nadie consume `paciente-published` y falta el vínculo `sub` → paciente (X-08). Esta ficha documenta **lo que hace el código** (rama `main`, 2026-10-31).
 
 ## Propósito
 MS1 es la parte **clínica** del negocio: registra al paciente, toma su consulta inicial (peso, altura, antecedentes, hábitos alimenticios), la aprueba, le asigna un plan alimenticio y hace el seguimiento con evaluaciones de control. Sin MS1 no hay paciente registrado ni historia clínica que justifique el plan que después se contrata y se entrega.
@@ -26,15 +26,15 @@ Estado real del código. Las relaciones que la plataforma espera y no existen es
 
 | Actor / servicio | Dirección | Mecanismo | Para qué |
 |---|---|---|---|
-| Frontend (paciente, recepción, nutricionista) | entrante | REST directo, sin token | Previsto por el README. **No hay frontend**; hoy solo Swagger y los tests |
-| SQL Server (`localhost\SQLEXPRESS`) | saliente | EF Core | BD propia `ClinicaNutricional3` |
+| Frontend (paciente, recepción, nutricionista) | entrante | REST con JWT (por el gateway: `/api/clinica-nutricional/v1/...`) | Previsto por el README. **No hay frontend**; hoy solo Swagger y los tests |
+| PostgreSQL | saliente | EF Core (Npgsql) | BD propia `ms1_clinica_nutricional` en el Postgres compartido de la plataforma |
 | RabbitMQ | saliente | Evento vía outbox | `paciente-published` (contrato local `PacientePublished`) |
 
 ## Mapa de comunicación
 ```mermaid
 flowchart LR
-  FE[Frontend<br/>no existe aún] -- "REST directo, sin token<br/>/api/v1/Patient, /api/v1/Consultation" --> API((MS1 WebApi))
-  API --> DB[(SQL Server<br/>ClinicaNutricional3)]
+  FE[Frontend<br/>no existe aún] -- "REST con JWT<br/>/api/v1/Patient, /api/v1/Consultation" --> API((MS1 WebApi))
+  API --> DB[(PostgreSQL<br/>ms1_clinica_nutricional)]
   DB -- "OutboxMessages" --> W[MS1 WorkerService]
   W -. "paciente-published<br/>(PacientePublished)" .-> X{{RabbitMQ}}
   X -. "gestion-clinica-nutricional.default<br/>(nadie la consume)" .-> SINK[(sink)]
@@ -46,23 +46,23 @@ Otros repos ya asumen un MS1 que todavía no coincide con este código:
 
 | Quién | Qué espera | Estado en el código de MS1 |
 |---|---|---|
-| **MS5** (`ClinicService`) | `POST /api/v1/patients/contact-information` con un array de `patientId` (texto) → `[{ patientId, phoneNumber, fullName }]`. Hoy, **directo y sin token**, contra un mock de Postman | **No existe.** Además `Paciente` no tiene teléfono |
+| **MS5** (`ClinicService`) | `POST /api/v1/patients/contact-information` con un array de `patientId` (texto) → `[{ patientId, phoneNumber, fullName }]`. Hoy, **directo y sin token**, contra un mock de Postman | **Existe** desde MS1#1: `POST /api/v1/patients/contact-information` (arreglo de ids → `[{ patientId, phoneNumber, fullName }]`, omite los inexistentes). `Paciente.Telefono` es opcional. MS5 ya no lo llama (MS5#4) |
 | **MS3** (modo simulación) | `GET /api/v1/patients/{id}` → `{ patientId, fullName, clinicalStatus }`, contra `ExternalServices:SimulationMockBaseUrl` o 3 pacientes en memoria | Existe `GET /api/v1/Patient/{id}`, pero devuelve la entidad `Paciente` (`id`, `ci`, `nombre`, `apellido`, `consultaIniciales`) y un id inexistente da **500**, no 404 |
-| **nur-tricenter-local** | `ms1-clinica-nutricional/ms1.compose.yml`, proyectos `src/ClinicaNutricional.Api` y `src/ClinicaNutricional.WorkerService`, contenedores `nur-tricenter-clinica-nutricional-api`/`-workerservice`, ruta `/api/clinica-nutricional/v1/...` en el gateway (o sea, nombre Consul `clinica-nutricional`) | Nada de eso existe: los proyectos están en la raíz con otros nombres y no hay registro en Consul (X-12) |
+| **nur-tricenter-local** | `ms1-clinica-nutricional/ms1.compose.yml`, proyectos `src/ClinicaNutricional.Api` y `src/ClinicaNutricional.WorkerService`, contenedores `nur-tricenter-clinica-nutricional-api`/`-workerservice`, ruta `/api/clinica-nutricional/v1/...` en el gateway (o sea, nombre Consul `clinica-nutricional`) | **Resuelto** (MS1#1 y local#8): `ms1.compose.yml` en la raíz del repo `ms1-gestion-clinica-nutricional`, contenedores `nur-tricenter-clinica-nutricional-{migrate,api,workerservice}`, registro en Consul y `start-stack` compila los proyectos reales (`GestionClinicaNutricional*`) |
 | **Topología RabbitMQ** | 7 colas `ms1.*`: `food-published`, `food-nutritional-info-updated`, `recipe-published`, `recipe-updated`, `meal-plan-published`, `user-published`, `user-updated` | Ninguna se consume |
 | **Topología RabbitMQ** | — (no declara ningún exchange de MS1) | MS1 publica en `paciente-published`, que la topología no conoce |
 | **Seguridad (X-08)** | Mapeo del `sub` del token de identity al `PatientId`, para la autorización por objeto | `Paciente` no guarda ningún id de usuario de identity |
-| **Kernel `Nur.Tricenter.Access`** | Scopes de MS1 | No hay scopes de MS1 en el kernel, y MS1 no exige ninguno |
+| **Kernel `Nur.Tricenter.Access`** | Scopes de MS1 | No hay scopes de MS1 en el kernel: MS1 solo exige un token válido (`AddSecurity` sin permisos + política de fallback "autenticado") |
 
 ## Stack y despliegue
-- **.NET 10** (`net10.0`), ASP.NET Core con **Controllers**, MediatR 12.5 (CQRS), EF Core 9 + **SQL Server**, Joseco (DDD.Core, Outbox.EFCore, Communication.External.RabbitMQ 1.1.0), NSwag (Swagger UI), Serilog en el worker. Paquetes centralizados en `Directory.Packages.props`.
-- **Proyectos (en la raíz del repo):** `GestionClinicaNutricional.Domain`, `.Application`, `.Infrastructure`, `.WorkerService`, `GestionClinicaNutricionalService.WebApi`, más `Tests` (NUnit + FakeItEasy) e `IntegrationTests` (xUnit + `WebApplicationFactory`, contra el SQL Server local).
-- **Kernels de la plataforma:** versiones fijadas en `Directory.Packages.props` (1.0.9) pero **sin referenciar**: las referencias a `Nur.Tricenter.Observability` están comentadas y no se usan `Access`, `Security` ni `Integration`.
-- **BD:** SQL Server `localhost\SQLEXPRESS` con `Trusted_Connection`, **cableado en el código**. `AddDbContext` apunta a `ClinicaNutricional`, pero `DatabaseContext.OnConfiguring` lo pisa con `ClinicaNutricional3`; las connection strings de `appsettings.json` no se leen.
+- **.NET 10** (`net10.0`), ASP.NET Core con **Controllers**, MediatR 12.5 (CQRS), EF Core 9 + **PostgreSQL** (Npgsql), Joseco (DDD.Core, Outbox.EFCore, Communication.External.RabbitMQ 1.1.0), NSwag (Swagger UI), Serilog en el worker. Paquetes centralizados en `Directory.Packages.props`.
+- **Proyectos (en la raíz del repo):** `GestionClinicaNutricional.Domain`, `.Application`, `.Infrastructure`, `.WorkerService`, `GestionClinicaNutricionalService.WebApi`, más `Tests` (NUnit + FakeItEasy) e `IntegrationTests` (xUnit + `WebApplicationFactory`, contra un Postgres local; la factory firma su propio JWT).
+- **Kernels de la plataforma:** 1.4.0 en `Directory.Packages.props`. Solo `Nur.Tricenter.Security` está referenciado (arrastra `Access`); `Integration` y `Observability` están fijados pero sin referenciar. El feed de GitHub Packages se configura en `NuGet.config` (`NUGET_USERNAME`/`NUGET_TOKEN`).
+- **BD:** PostgreSQL, `ConnectionStrings:DefaultConnection` (por defecto el Postgres de `nur-tricenter-local` en `localhost:5433`, BD `ms1_clinica_nutricional`). Migración única `InitialCreate` (reemplazó las 27 de SQL Server); el esquema se aplica con el job `dotnet GestionClinicaNutricionalService.WebApi.dll --migrate`. Las fechas se guardan en UTC (Npgsql rechaza `DateTime` locales).
 - **Procesos:** la WebApi (`http://localhost:5290` / `https://localhost:7040` en `launchSettings.json`) y el WorkerService (procesa el outbox, publica en RabbitMQ y declara una cola sumidero).
-- **Consul / gateway:** no se registra; sin prefijo de gateway.
-- **Docker:** `docker-compose.yml` propio con la imagen `logfile1995/gestionclinicanutricional:latest` en `3001:80`. No hay compose de plataforma.
-- **Swagger** siempre activo (`/swagger`) y `UseHttpsRedirection`. No hay `/health`.
+- **Consul / gateway:** con `ServiceRegistration__ServiceDiscoveryAddress` se registra como `clinica-nutricional` y el gateway lo publica en `/api/clinica-nutricional/**`. `/health` prueba Postgres.
+- **Docker:** `ms1.compose.yml` (platform: migrate + API + worker, binarios montados de `bin/Debug/net10.0`), `docker-compose.yml` standalone (con su Postgres y RabbitMQ, puerto `3001:80`) y `dockerfile` con targets `api` y `worker` (el token de NuGet entra como secreto de BuildKit).
+- **Swagger** activo por defecto (`OpenApi:Enabled`; la plataforma lo apaga) y `UseHttpsRedirection` configurable (`HttpsRedirection:Enabled`). `/health` es anónimo.
 
 ## Índice de la ficha
 - [domain.md](./domain.md): modelo de dominio, estados e invariantes

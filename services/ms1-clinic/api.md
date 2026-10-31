@@ -1,13 +1,16 @@
 # API — MS1
 
 - **Prefijos internos:** `/api/v1/Patient` y `/api/v1/Consultation`, más dos controladores **sin** `/api` (`/Paciente`, `/Atencion`) que duplican funciones.
-- **Prefijo en el gateway:** ninguno. MS1 no se registra en Consul. `nur-tricenter-local` espera `/api/clinica-nutricional/v1/...`, que hoy no resuelve.
-- **Autenticación:** **ninguna.** No hay `AddAuthentication`, `[Authorize]` ni scopes; cualquier cliente que llegue al puerto puede leer y escribir.
+- **Prefijo en el gateway:** `/api/clinica-nutricional/v1/...` (MS1 se registra en Consul como `clinica-nutricional` desde MS1#1).
+- **Autenticación:** JWT de identity en **todas** las rutas salvo `/health` (política de fallback "usuario autenticado"). No hay scopes de MS1 en el kernel, así que cualquier token válido sirve.
 - **Formato de respuesta:** los comandos devuelven el `Result<T>` de Joseco serializado tal cual: `{ "value": …, "isSuccess": true, "isFailure": false, … }`. Los enums viajan como **número** (no hay `JsonStringEnumConverter`).
 - **Formato de error:** no hay manejador de excepciones ni ProblemDetails configurado. Un recurso inexistente termina en **500** (los repositorios lanzan `NullReferenceException`).
 - **Ids:** todos GUID.
-- **Documentación interactiva:** NSwag, siempre activo: `/swagger`. `MapOpenApi()` está mapeado sin `AddOpenApi()`.
-- **Llamado por:** nadie desde otro servicio. El README prevé un frontend (paciente, recepción, nutricionista) que no existe; hoy se usa desde Swagger y desde `IntegrationTests`.
+- **Documentación interactiva:** NSwag, `/swagger`, activo salvo `OpenApi:Enabled=false` (la plataforma lo apaga). Cada llamada necesita el token.
+- **Llamado por:** hoy ningún servicio (MS5 ya no usa `contact-information`). El README prevé un frontend (paciente, recepción, nutricionista) que no existe; hoy se usa desde Swagger y desde `IntegrationTests`.
+
+## Contrato para MS5: `POST /api/v1/patients/contact-information`
+Cuerpo: arreglo de ids de paciente (`["<guid>", …]`). Respuesta: `{ value: [{ patientId, phoneNumber, fullName }], isSuccess, … }`; los ids que no existen se omiten. Controlador `PatientsContactController` (`api/v1/patients`). El teléfono sale de `Paciente.Telefono`, opcional en `CreatePaciente` (`telefono`).
 
 ## Resumen
 | Método | Ruta | Llamado por (previsto) | Scope | Idempotente |
