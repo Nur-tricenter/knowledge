@@ -2,7 +2,7 @@
 
 | Id | Gap | Severidad | Depende de | Estado |
 |---|---|---|---|---|
-| ms4-gap-01 | El resultado de la entrega solo cierra el día si `PackageId` es el `packId` de MS4 | high | MS3, MS5 | resuelto (X-01, X-10; MS4#8); falta la evidencia en `DeliveryCompleted` |
+| ms4-gap-01 | El resultado de la entrega solo cierra el día si `PackageId` es el `packId` de MS4 | high | MS3, MS5 | resuelto (X-01, X-10; MS4#8 y #10, incluida la evidencia en `DeliveryCompleted`) |
 | ms4-gap-02 | Sin autorización por objeto (BOLA) | high | identity / MS1 | abierto (X-08) |
 | ms4-gap-03 | Job diario de catálogo con disparo manual | medium | — | abierto |
 | ms4-gap-04 | `InProduction` nunca se asigna | low | MS3 | abierto |

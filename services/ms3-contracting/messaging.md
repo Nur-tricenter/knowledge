@@ -5,7 +5,7 @@
 |---|---|---|---|---|
 | `package-validated` | `PackageValidated` | `Package.Validated` | El control de calidad aprueba un paquete (`POST /production/packages/validate`); un evento por paquete | sí |
 
-Contrato: `Nur.Tricenter.Integration.Messages.Contracting` (versión 1.2.0 del kernel, ya fusionada en su `main`). MS3 **no** referencia el kernel: publica una copia local equivalente, `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.Production.PackageValidated` (mismos campos y `EventType`, otro namespace y base `IntegrationMessage` de Joseco). En el cable el JSON es el mismo (`ms3-gap-05`).
+Contrato: `Nur.Tricenter.Integration.Messages.Contracting` (kernel 1.5.0; trae `DeliveryDate`, `PatientName`, `DeliveryDayId` y `PatientPhone`). MS3 **no** referencia el kernel: publica una copia local equivalente, `Nurtricenter.MS3.Infrastructure.Messaging.Contracts.Production.PackageValidated` (mismos campos y `EventType`, otro namespace y base `IntegrationMessage` de Joseco). En el cable el JSON es el mismo (`ms3-gap-05`).
 
 Cuerpo publicado:
 ```json

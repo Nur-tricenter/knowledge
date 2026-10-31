@@ -93,8 +93,8 @@ exchanges:
     contract: PackageValidated
     namespace: Nur.Tricenter.Integration.Messages.Contracting
     event_type: Package.Validated
-    # PatientName y DeliveryDate desde 1.3.0; DeliveryDayId (int?, null si no hay calendario) desde 1.4.0.
-    payload: [PackageId, PatientId, PatientName, ProductionOrderId, CatalogPlanId, ReleasedAt, DeliveryDate, DeliveryAddress, TrackingNumber, Latitude, Longitude, DeliveryDayId]
+    # PatientName y DeliveryDate desde 1.3.0; DeliveryDayId (int?, null si no hay calendario) desde 1.4.0; PatientPhone (string?, null si MS1 no lo tiene) desde 1.5.0.
+    payload: [PackageId, PatientId, PatientName, ProductionOrderId, CatalogPlanId, ReleasedAt, DeliveryDate, DeliveryAddress, TrackingNumber, Latitude, Longitude, DeliveryDayId, PatientPhone]
     queues: [ms5.package-validated]
 
   # ── Logística (MS5) — publicados vía outbox; solo los tres delivery-* tienen colas (ms4.*) ──
@@ -171,7 +171,8 @@ exchanges:
     contract: DeliveryCompleted
     namespace: Nur.Tricenter.Integration.Messages.Logistics
     event_type: Delivery.Completed
-    payload: [DeliveryId, RouteId, DeliveredAt]
+    # EvidencePhotoUrl y DigitalSignature (string?) desde 1.5.0; MS4 las guarda en DeliveryEvidence.
+    payload: [DeliveryId, RouteId, DeliveredAt, EvidencePhotoUrl, DigitalSignature]
     queues: [ms4.delivery-completed]
 
   - name: delivery-failed

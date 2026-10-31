@@ -150,7 +150,7 @@ Todas lanzan `DomainException` con un `Error`; `DomainExceptionHandler` lo tradu
 | La ruta se crea para un repartidor existente | `CreateRouteHandler` | 404 `Courier.NotFound` |
 | La fecha de la ruta no puede ser pasada (fecha local del servidor) | `CreateRouteValidator` | 400 |
 | Los paquetes se agregan a la ruta de **hoy** creada más recientemente, sea del repartidor que sea | `AddDeliveriesHandler` + `RouteRepository.GetLatestRouteForTodayAsync` | 404 `Route.NoRouteForToday` |
-| Todos los pacientes del lote deben existir en ClinicService | `AddDeliveriesHandler` | 404 `ClinicService.PatientsNotFound` |
+| `patientName` obligatorio en cada ítem (ya no se valida contra MS1) | `AddDeliveriesValidator` | 400 |
 | Paquete con `PackageId`, `PatientId` y `LabelData` no vacíos | VO `ValidatedPackage` (el validador no revisa `LabelData`) | 400 `ValidatedPackage.Empty*` |
 | Dirección con descripción y coordenada | VO `DeliveryAddress` | 400 |
 | No agregar entregas a una ruta `Completed`/`Cancelled` | `Route.AddDelivery` | 422 `Route.CannotAddDelivery` |
@@ -172,6 +172,6 @@ Todas lanzan `DomainException` con un `Error`; `DomainExceptionHandler` lo tradu
 **Ninguna proyección local.** En `main` no consume eventos; no mantiene copias de datos ajenos.
 | Dato | Origen | Cómo se mantiene |
 |---|---|---|
-| `PatientId` (dentro de `ValidatedPackage`) | Quien llama a `POST /packages/deliveries` (en la rama `dev`, también el evento `package-validated` de MS3) | Solo la referencia, como texto |
-| Nombre y teléfono del paciente | MS1 (ClinicService; hoy un mock de Postman) | **No se guardan**: se piden por HTTP en cada `POST /packages/deliveries` y en cada `GET …/route/today` |
+| `PatientId` (dentro de `ValidatedPackage`) | El evento `package-validated` de MS3 o, a mano, quien llama a `POST /packages/deliveries` | Solo la referencia, como texto |
+| Nombre y teléfono del paciente | MS3, que los lee de MS1 y los manda en `package-validated` (`PatientName`; `PatientPhone` desde 1.5.0). En la carga manual, `patientName` del request | **Se guardan** en el `ValidatedPackage` de la entrega (`PatientName`, `PatientPhone` nullable, columna agregada en MS5#8). MS5 ya no consulta a MS1; las entregas manuales o anteriores a 1.5.0 no tienen teléfono |
 | `PackageId` | Quien llama a `POST /packages/deliveries` | Texto libre. MS4 lo lee como su `packId` al consumir `delivery-added-to-route`: si el llamador usa el `packId` de MS4, el día se puede cerrar; el código de MS5 no lo garantiza (ms5-gap-02) |

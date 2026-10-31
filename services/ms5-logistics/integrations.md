@@ -1,67 +1,31 @@
 # Integraciones síncronas — MS5
 
 ## Resumen
-| Destino | Método y ruta | Vía | Auth | Para qué |
-|---|---|---|---|---|
-| MS1 — ClinicService (hoy un mock de Postman) | `POST /api/v1/patients/contact-information` | **directo** (no pasa por el gateway) | ninguna | Validar que los pacientes existen y obtener nombre y teléfono |
+MS5 **no hace llamadas HTTP salientes**. Hasta MS5#4 (2026-10-29) llamaba a «ClinicService» (MS1) para validar pacientes y traer su nombre; esa llamada, el puerto `IClinicService` y la variable `ClinicService__BaseUrl` ya no existen.
 
-Es la **única** llamada HTTP saliente. MS5 **no llama a MS4** (no existe cliente HTTP ni service account para `PATCH /delivery-result`; MS4 recibe el resultado por eventos, ver [messaging.md](./messaging.md)) ni a identity.
+| Necesita | De dónde lo obtiene ahora |
+|---|---|
+| Nombre del paciente | `PackageValidated.PatientName` (kernel 1.3.0); en la carga manual, el campo `patientName` de `POST /packages/deliveries` |
+| Teléfono del paciente | `PackageValidated.PatientPhone` (kernel 1.5.0, MS5#8); MS3 lo lee de MS1 al liberar el paquete |
+| Día de entrega de MS4 | `PackageValidated.DeliveryDayId` (kernel 1.4.0), que MS5 reenvía en `DeliveryAddedToRoute` |
 
-## Detalle
+MS5 tampoco llama a MS4 (no existe cliente HTTP ni service account para `PATCH /delivery-result`): MS4 recibe el resultado por eventos, ver [messaging.md](./messaging.md). Ni a identity: sus endpoints son anónimos (ms5-gap-01).
 
-### MS5 → ClinicService: contacto de pacientes
-- **Puerto / adaptador en el código:** puerto `IClinicService` (`src/Nurtricenter.Core/Interfaces/Services/ClinicService/IClinicService.cs`), adaptador `src/Nurtricenter.Infrastructure/Services/ClinicService.cs`, registrado como typed `HttpClient` en `Nurtricenter.Infrastructure.DependencyInjection` con `BaseAddress = ClinicService:BaseUrl`.
-- **Ruta exacta:** `POST {ClinicService:BaseUrl}/api/v1/patients/contact-information`. En la plataforma, `ClinicService__BaseUrl` (en `nurtricenter.compose.yml`) apunta a un **mock de Postman** (`https://<id>.mock.pstmn.io`). No es una URL del gateway ni un nombre de Consul, así que la llamada **sale directo** y no se beneficia del descubrimiento.
-- **Contrato** (definido por MS5; no existe en ningún kernel ni en un repo de MS1):
-  ```
-  request : ["P-001", "P-002"]                       // array JSON de patientId distintos
-  200     : [ { "patientId": "P-001", "phoneNumber": "…", "fullName": "Juana Pérez" } ]
-  ```
-  DTO: `PatientContactInfo(PatientId, PhoneNumber, FullName)` en Core. `PhoneNumber` se recibe pero **ningún caso de uso lo usa** hoy.
-- **Autenticación:** ninguna. No se envía `Authorization`: no hay service account ni se reenvía el token del usuario (que tampoco existe, porque MS5 es anónimo).
-- **Quién la usa:**
-  | Caso de uso | Para qué | Si falta un paciente en la respuesta |
-  |---|---|---|
-  | `AddDeliveriesHandler` (`POST /packages/deliveries`) | Validar que **todos** los pacientes del lote existen | 404 `ClinicService.PatientsNotFound` y no se guarda nada |
-  | `GetCourierTodayRouteHandler` (`GET …/route/today`) | Mostrar el nombre del paciente en cada parada | Se muestra el `patientId` en lugar del nombre |
-- **Por qué es síncrono:** MS5 necesita la respuesta **en el momento** para aceptar o rechazar el lote, y no guarda datos de pacientes. La alternativa por eventos sería una proyección local de contactos alimentada por un evento de MS1 (`patient-registered` o similar), que no existe. Hay que pesar que hoy es la única dependencia síncrona que puede tumbar la consulta de ruta del repartidor.
-- **Si falla:**
-  | Respuesta de ClinicService | Resultado en MS5 |
-  |---|---|
-  | No-2xx (404, 500…) | `DomainException` `ClinicService.RequestFailed` (`ErrorType.Problem`) → **422** al cliente, con el cuerpo de la respuesta original en el detalle |
-  | 200 con cuerpo `null` | 422 `ClinicService.EmptyResponse` |
-  | 200 con JSON malformado | `JsonException` (no es `DomainException`) → **500** |
-  | Timeout / red caída | Excepción del `HttpClient` (no es `DomainException`) → **500** del handler por defecto. Timeout por defecto de `HttpClient` (100 s) |
-  | Lista de ids vacía | No se hace la llamada |
-
-  **Sin reintentos, sin circuit breaker, sin timeout propio**: no hay resilience handler registrado. **Sin degradación:** si ClinicService está caído, el repartidor tampoco puede ver su ruta del día (el `GET` devuelve 422/500), aunque la ruta esté completa en la BD.
-- **Modo sin dependencia (mock/fixture):** el propio destino ya es un mock de Postman. En los tests, `IntegrationTestWebAppFactory` reemplaza `IClinicService` por un `Mock<IClinicService>` (Moq), y `ClinicServiceTests` prueba el adaptador con `RichardSzalay.MockHttp` (ruta, cuerpo y manejo de 200/404/500/cuerpo nulo).
+## Qué cambió y por qué
+- **Antes:** `POST {ClinicService:BaseUrl}/api/v1/patients/contact-information` contra un mock de Postman, directo, sin token y sin resiliencia. Si fallaba, el repartidor no podía ver su ruta (ms5-gap-05).
+- **Ahora:** el nombre y el teléfono se guardan con la entrega al agregarla. La consulta de la ruta del día lee solo de la base de MS5, así que un MS1 caído no afecta al repartidor.
+- **Compromiso:** el dato queda «congelado» al liberar el paquete; si el paciente cambia de teléfono después, la entrega conserva el anterior. Las entregas cargadas a mano o anteriores a 1.5.0 no tienen teléfono (`null`).
+- MS1 conserva `POST /api/v1/patients/contact-information` (desde MS1#1), pero nadie lo llama. Ver [ms1-clinic](../ms1-clinic/integrations.md).
 
 ```mermaid
 sequenceDiagram
-  participant P as Operaciones (única entrada de paquetes en main)
-  participant GW as Gateway
+  participant M3 as MS3
+  participant M1 as MS1
+  participant MQ as RabbitMQ
   participant MS5
-  participant CS as MS1 ClinicService (mock Postman)
-  participant DB as BD MS5 (Neon)
-  P->>GW: POST /api/nurtricenter/v1/packages/deliveries (sin token)
-  GW->>MS5: POST /api/v1/packages/deliveries
-  MS5->>CS: POST /api/v1/patients/contact-information ["P-001", …] (directo, sin token)
-  alt todos los pacientes existen
-    CS-->>MS5: 200 [ { patientId, phoneNumber, fullName } ]
-    MS5->>DB: ruta de hoy más reciente + N entregas Pending + N filas outbox
-    MS5-->>P: 201 { routeId, deliveries[] }
-  else falta alguno
-    CS-->>MS5: 200 (lista incompleta)
-    MS5-->>P: 404 ClinicService.PatientsNotFound
-  else ClinicService responde error
-    CS-->>MS5: 5xx
-    MS5-->>P: 422 ClinicService.RequestFailed
-  end
+  M3->>M1: GET /api/clinica-nutricional/v1/Patient/{id} (al liberar el paquete)
+  M1-->>M3: { nombre, apellido, telefono }
+  M3-)MQ: package-validated { PatientName, PatientPhone, DeliveryDayId, … }
+  MQ-)MS5: ms5.package-validated
+  MS5->>MS5: guarda la entrega con nombre y teléfono en la ruta de su fecha
 ```
-
-## Integraciones que faltan
-| Destino | Qué haría falta | Gap |
-|---|---|---|
-| MS4 Calendario | Ninguna llamada REST: se eligió el camino por eventos (MS4 consume `delivery-*` por colas `ms4.delivery-*`). `PATCH /delivery-result` sigue sin usarse desde MS5. Lo pendiente es que el `PackageId` sea el `packId` de MS4 | X-01 / ms5-gap-02 |
-| MS1 Pacientes real | Reemplazar el mock por el servicio real, detrás del gateway (`/api/<consul-name-ms1>/v1/...`) y con un token | X-04 / ms5-gap-05 |

@@ -18,7 +18,7 @@ MS3 es donde un paciente **compra** un plan nutricional y donde la cocina **prod
 - No define planes ni recetas → **MS2**. MS3 guarda una copia (`CatalogPlans`, `CatalogRecipes`).
 - No genera ni modifica el calendario de entregas → **MS4**. MS3 solo lo crea y lee la orden de producción.
 - No arma rutas ni asigna repartidores → **MS5**.
-- No gestiona pacientes → **MS1**. Hoy son 3 pacientes simulados (X-04).
+- No gestiona pacientes → **MS1**. Los consulta a MS1 por REST (`Clinic__BaseUrl`); sin esa variable usa 3 simulados.
 - No emite ni valida tokens: **no valida JWT** (sus endpoints son anónimos, ver [gaps](./gaps.md)). Solo usa uno propio, el de `ms3-service`, para llamar a MS4.
 
 ## Actores y vecinos
@@ -57,7 +57,7 @@ Todas las llamadas REST pasan por el gateway (`/api/contracting/**` para entrar 
 | RabbitMQ | el suyo, con `topology/` | el de la plataforma |
 | Consul | apagado | se registra como `contracting` |
 | MS4 e identity | no se usan: calendarios simulados; `CreateSchedule` queda `Unroutable` | REST vía gateway con `ms3-service` |
-| MS1 | simulado | simulado |
+| MS1 | simulado | REST vía gateway con `ms3-service` (`Clinic__BaseUrl`) |
 
 - **Procesos en plataforma:** `contracting-api` (puerto 8080, se registra en Consul) y `contracting-workerservice` (relay del outbox + consumidores; no se registra en Consul).
 - **Pruebas:** unitarias, de integración (SQLite en memoria, sin broker) y de contrato (Pact). El detalle y los casos de uso están en `docs/` del repo.

@@ -143,7 +143,7 @@ gaps:
     summary: Sin autenticación ni scopes; Swagger siempre activo.
     severity: high
   - id: ms1-gap-03
-    summary: No existe POST /api/v1/patients/contact-information que espera MS5 y Paciente no tiene teléfono.
+    summary: Resuelto (MS1#1). El endpoint existe y Paciente.Telefono es opcional; MS5 ya no lo llama, el teléfono llega por PackageValidated.PatientPhone (MS3#9, MS5#8).
     severity: high
     blocked_by: ms5
   - id: ms1-gap-04

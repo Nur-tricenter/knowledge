@@ -59,20 +59,20 @@ sequenceDiagram
 - **Camino feliz:** agrega una `Evaluacion` con la fecha actual del servidor y lista el historial del plan.
 - **Errores:** plan inexistente → 500 al crear; lista vacía al consultar.
 
-## F5 — Lo que la plataforma espera de MS1 (no implementado)
-- **MS5** pide nombre y teléfono de los pacientes de un lote (`POST /api/v1/patients/contact-information`) a un mock de Postman, porque MS1 no tiene ese endpoint ni guarda teléfonos.
-- **MS3** valida el paciente al crear un contrato contra pacientes simulados (`GET /api/v1/patients/{id}`).
+## F5 — Lo que la plataforma toma de MS1
+- **MS3** lee el paciente (`GET /api/v1/Patient/{id}`, por el gateway como `ms3-service`) al crear un contrato, etiquetar y liberar el paquete; de ahí sale el teléfono que viaja a MS5 en `PackageValidated.PatientPhone` (MS3#8 y #9). Un id inexistente da 404 (MS1#2).
+- **MS5** ya no pide nada a MS1 (MS5#4): `POST /api/v1/patients/contact-information` existe pero nadie lo llama.
 - **Nadie consume `paciente-published`.** Ni MS3 ni MS5 mantienen una copia de pacientes a partir del evento.
 
 ```mermaid
 sequenceDiagram
   participant MS3
-  participant MS5
-  participant SIM as Simulación / mock
+  participant GW as Gateway
   participant MS1
-  MS3->>SIM: GET /api/v1/patients/{id}
-  SIM-->>MS3: { patientId, fullName, clinicalStatus }
-  MS5->>SIM: POST /api/v1/patients/contact-information
-  SIM-->>MS5: [{ patientId, phoneNumber, fullName }]
-  Note over MS1: No participa: fuera del gateway, sin Consul y sin esos endpoints
+  participant MS5
+  MS3->>GW: GET /api/clinica-nutricional/v1/Patient/{id} (Bearer ms3-service)
+  GW->>MS1: GET /api/v1/Patient/{id}
+  MS1-->>MS3: { id, nombre, apellido, telefono, … } | 404
+  MS3-)MS5: package-validated { PatientName, PatientPhone }
+  Note over MS1,MS5: MS5 no llama a MS1; recibe el nombre y el teléfono en el evento
 ```

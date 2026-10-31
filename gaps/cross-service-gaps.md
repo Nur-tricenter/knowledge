@@ -1,14 +1,14 @@
 # Gaps transversales
 
 Problemas que involucran **a más de un servicio**. Los gaps internos de cada MS van en `services/<ms>/gaps.md`.
-Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07, X-10 y X-11 revisados el 2026-10-24 con la ficha de MS5. **Revisión transversal del 2026-10-28** contra el código de todos los repos (`main` de cada uno; MS1 en su repo externo): actualiza X-02, X-04, X-06, X-07 y X-10 y agrega X-12 a X-14. **Actualización del 2026-10-29** con los PR mergeados el 28 y 29: cierra X-01, X-10, X-12 y X-16; actualiza X-04, X-06 y X-07. **Actualización del 2026-10-31:** mergeados los PR de pacientes reales (MS3#8, MS1#2), migración automática de MS5 (MS5#6, ya no se corre `dotnet ef` a mano) y evidencia de entrega (kernel#6, MS5#7, MS4#10); kernel 1.5.0 publicado. Stack reconstruido desde `main` y `e2e-smoke.py` (éxito y `--fail`) en verde. Al resolver uno, márcalo como cerrado e indica el PR.
+Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07, X-10 y X-11 revisados el 2026-10-24 con la ficha de MS5. **Revisión transversal del 2026-10-28** contra el código de todos los repos (`main` de cada uno; MS1 en su repo externo): actualiza X-02, X-04, X-06, X-07 y X-10 y agrega X-12 a X-14. **Actualización del 2026-10-29** con los PR mergeados el 28 y 29: cierra X-01, X-10, X-12 y X-16; actualiza X-04, X-06 y X-07. **Actualización del 2026-10-31:** mergeados los PR de pacientes reales (MS3#8, MS1#2), migración automática de MS5 (MS5#6, ya no se corre `dotnet ef` a mano) y evidencia de entrega (kernel#6, MS5#7, MS4#10); kernel 1.5.0 publicado. Stack reconstruido desde `main` y `e2e-smoke.py` (éxito y `--fail`) en verde. **Cierre del 2026-10-31 (alcance «demo interconectada»):** además mergeados MS3#9 y MS5#8 (teléfono del paciente hasta la ruta del repartidor). Quedan abiertos los gaps de seguridad (X-03, X-08, X-11, X-14) y los secundarios (X-02, X-05, X-06, X-07, X-09, X-15, X-17). Al resolver uno, márcalo como cerrado e indica el PR.
 
 | Id | Gap | Severidad | Servicios | Estado |
 |---|---|---|---|---|
 | X-01 | El ciclo de entrega solo cierra si `PackageId` es el `packId` de MS4 | high | MS3, MS5, MS4 | resuelto (kernel#5 y #6, MS3#6, MS5#5 y #7, MS4#6, #8 y #10); `DeliveryCompleted` lleva foto y firma y MS4 las guarda en `DeliveryEvidence` (verificado en el stack local el 2026-10-31) |
 | X-02 | De los 10 exchanges de logística, solo los 3 de entrega tienen consumidor (MS4) | medium | MS5, consumidores | parcial |
 | X-03 | MS5 no valida JWT ni tiene scopes en el kernel | high | MS5, kernels | abierto |
-| X-04 | MS1 integrado a la plataforma desde 2026-10-31; MS5 no llama a MS1 (MS5#4) | medium | MS1, MS3, MS5 | abierto (parcial): MS3 ya lee pacientes reales de MS1 (MS3#8, MS1#2, local#9; verificado con `e2e-smoke.py`); falta el teléfono hacia el repartidor (`PackageValidated.PatientPhone` existe en el kernel 1.5.0 pero MS3 y MS5 no lo usan) |
+| X-04 | MS1 integrado a la plataforma desde 2026-10-31; MS5 no llama a MS1 (MS5#4) | medium | MS1, MS3, MS5 | resuelto en lo funcional (MS1#2, MS3#8 y #9, MS5#8, local#9): MS3 lee pacientes reales de MS1 y el teléfono llega al repartidor en `package-validated`. Quedan el vínculo `sub` → paciente (X-08) y los scopes de MS1 |
 | X-05 | La ruta de identity en el gateway está documentada de dos formas | low | identity, kernels | abierto |
 | X-06 | Hay colas declaradas sin consumidor | low | todos | abierto |
 | X-07 | Versiones mezcladas de los kernels | medium | todos | abierto |
@@ -51,7 +51,7 @@ MS5 solo llama a `AddAuthorization()`, sin `AddSecurity()` del kernel, y no exis
 **Confirmado por MS5 (2026-10-24):** ningún endpoint tiene `RequireAuthorization` ni `[Authorize]`; a través del gateway cualquiera puede crear repartidores y rutas, cargar paquetes y cerrar entregas. MS5 tampoco tiene service account (su única llamada saliente va sin token).
 
 ### X-04 — MS1 sin integrar
-> **2026-10-31:** MS1 ya está en la org (`ms1-gestion-clinica-nutricional`) e integrado al stack local (X-13). Expone `POST /api/v1/patients/contact-information`; quedan pendientes que MS3 deje los pacientes simulados y el vínculo `sub` → paciente (X-08).
+> **2026-10-31 — resuelto en lo funcional.** MS1 ya está en la org (`ms1-gestion-clinica-nutricional`) e integrado al stack local (X-13). MS3 lee los pacientes de MS1 por el gateway con `ms3-service` ([MS3#8](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/8); `GET /Patient/{id}` da 404 si no existe, [MS1#2](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional/pull/2)) y manda el teléfono a MS5 en `PackageValidated.PatientPhone` ([MS3#9](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/9), [MS5#8](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/8), kernel 1.5.0). `contact-information` sigue en MS1 sin consumidores. Queda el vínculo `sub` → paciente (X-08).
 
 > **2026-10-28:** MS1 **sí tiene código**, en un repo fuera de la org: `Juandcode/ClinicaNutricionalMicroservicio1` (lo clona `setup-project` como `ms1-clinica-nutricional`). No expone `POST /api/v1/patients/contact-information` ni guarda teléfono ni dirección, así que no cumple el contrato que espera MS5. Por qué no se puede enchufar todavía: X-13. Ficha: [ms1-clinic](../services/ms1-clinic/README.md) (`draft`).
 
@@ -66,18 +66,18 @@ El gateway arma el prefijo con el nombre en Consul (`identity-service`) → `/ap
 Por ejemplo `ms4.recipe-published`, `ms4.food-*`, `ms4.user-*`, `ms2.user-updated`, todas las `ms1.*` (MS1 no consume nada) y las `ms5.*` salvo `ms5.package-validated`, que MS5 consume en `main` desde el 2026-10-29 (MS5#3). Se acumulan mensajes sin que nadie los lea. O se consumen, o se quitan de la topología. Al revés también pasa: identity declara en runtime la cola durable `identity.default` (y MS1 `gestion-clinica-nutricional.default`), que no figuran en `rabbitmq-definitions.json`.
 
 ### X-07 — Kernels en versiones distintas
-> **2026-10-29:** el kernel avanzó a 1.4.0 y cada servicio quedó en una versión distinta:
+> **2026-10-31:** el kernel está en 1.5.0 (publicado ese día); MS4 y MS5 ya lo usan. El resto sigue en versiones anteriores o sin kernel:
 
 | Servicio | Kernels |
 |---|---|
-| MS4 | `Access`, `Security`, `Integration` 1.4.0 (MS4#6, restaurado en MS4#8) |
-| MS5 | solo `Integration` 1.4.0 en `main` (MS5#5) |
+| MS4 | `Access`, `Security`, `Integration` 1.5.0 (MS4#10; 1.4.0 desde MS4#6 y #8) |
+| MS5 | solo `Integration` 1.5.0 (MS5#7; 1.4.0 desde MS5#5) |
 | MS2, identity | `Access`, `Security`, `Integration`, `Observability` 1.2.0 (MS2#3, identity#2); `Joseco.Outbox.EFCore` y `Joseco.Communication.External.RabbitMQ` volvieron a 1.1.0 porque la 1.2.0 no está disponible (MS2#4, identity#3) |
-| MS3 | ninguno: copias locales de los contratos (`PackageValidated`, eventos del catálogo), con el formato de la 1.4.0 (MS3#5, #6) |
+| MS3 | ninguno: copias locales de los contratos (`PackageValidated`, eventos del catálogo), con el formato de la 1.5.0 (MS3#5, #6, #9) |
 | MS1 | ninguno: contrato local `PacientePublished` (Joseco `IntegrationMessage`) |
 | Gateway | ninguno |
 
-Historial de `Integration`: 1.2.0 agregó `PackageValidated`; 1.3.0, `DeliveryDate` y `PatientName` (kernel#4); 1.4.0, `DeliveryDayId` en `PackageValidated` y `DeliveryAddedToRoute` (kernel#5). Los cambios son aditivos. Los contratos copiados pueden divergir del publisher sin que nada falle.
+Historial de `Integration`: 1.2.0 agregó `PackageValidated`; 1.3.0, `DeliveryDate` y `PatientName` (kernel#4); 1.4.0, `DeliveryDayId` en `PackageValidated` y `DeliveryAddedToRoute` (kernel#5); 1.5.0, `EvidencePhotoUrl` y `DigitalSignature` en `DeliveryCompleted` y `PatientPhone` en `PackageValidated` (kernel#6). Los cambios son aditivos. Los contratos copiados pueden divergir del publisher sin que nada falle.
 
 ### X-08 — Autorización por objeto
 Los scopes dicen *qué tipo* de cliente llama, no *de quién* es el recurso. Hace falta que el token (o una consulta a MS1) permita mapear `sub` → `PatientId`.

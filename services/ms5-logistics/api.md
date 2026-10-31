@@ -7,7 +7,7 @@
 - **Enums en las respuestas:** **no son uniformes.** `POST /couriers` y `POST /routes` devuelven `status` como **número** (no hay `JsonStringEnumConverter`); los demás lo devuelven como texto (`"InProgress"`, `"Delivered"`), y `POST /packages/deliveries` en minúsculas (`"pending"`).
 - **Ids:** todos los ids propios son `Guid`. `patientId` y `packageId` son texto libre.
 - **Documentación interactiva:** Scalar en `/scalar/v1` y OpenAPI en `/openapi/v1.json`, **solo** con `ASPNETCORE_ENVIRONMENT=Development`.
-- **Llamadores:** hoy **ningún servicio** llama a MS5 por REST desde código. La columna "Llamado por" indica el llamador **esperado** según el dominio. En `main` los paquetes entran **solo** por `POST /packages/deliveries` (el consumo del evento `package-validated` de MS3 existe únicamente en la rama `dev`, sin merge).
+- **Llamadores:** ningún servicio llama a MS5 por REST desde código; la columna "Llamado por" indica el llamador **esperado**. Los paquetes entran por el evento `package-validated` de MS3 (desde MS5#3); `POST /packages/deliveries` queda como carga manual.
 
 ## Resumen
 | Método | Ruta | Llamado por (esperado) | Scope | Idempotente |
@@ -66,7 +66,7 @@ No impide crear dos rutas para el mismo repartidor y la misma fecha. Publica `ro
 
 ### `POST /api/v1/packages/deliveries`
 **Para qué:** entregarle a logística los paquetes que hay que repartir **hoy**. Cada ítem se convierte en una `Delivery` `Pending`.
-**Llamado por:** nadie desde código; lo usa operaciones a mano. En `main` es la **única** forma de cargar paquetes. Para que MS4 pueda cerrar el día, `packageId` tiene que ser el `packId` de MS4 (de `active-tomorrow`); MS5 no lo valida (ms5-gap-02). La rama `dev` agrega además el consumo del evento `package-validated` (ver [messaging.md](./messaging.md)).
+**Llamado por:** operaciones, a mano. El flujo normal es el evento `package-validated` de MS3 (MS5#3). Para que MS4 pueda cerrar el día, `packageId` tiene que ser el `packId` de MS4 (de `active-tomorrow`); MS5 no lo valida (ms5-gap-02). Los paquetes que llegan por evento traen el `DeliveryDayId`.
 **Scope:** ninguno.
 
 Request (un **array**, no un objeto):
@@ -74,6 +74,7 @@ Request (un **array**, no un objeto):
 [
   {
     "patientId": "P-001",
+    "patientName": "Juana Pérez",
     "packageDetails": {
       "packageId": "PKG-001",
       "destination": {
@@ -90,19 +91,19 @@ Response `201` (`Location: /api/v1/packages/deliveries/{routeId}`):
 { "routeId": "…guid…", "deliveries": [ { "patientId": "P-001", "deliveryId": "…guid…", "status": "pending" } ] }
 ```
 Cómo se resuelve:
-1. Pide a ClinicService el contacto de todos los `patientId` distintos del lote (ver [integrations.md](./integrations.md)).
+1. Valida el lote: `patientId`, `patientName`, `packageId` y `address` son obligatorios. Ya no se consulta a MS1 (MS5#4).
 2. Busca la ruta de **hoy** creada más recientemente, **sin importar de qué repartidor sea**, y le agrega todas las entregas.
 
 | Código | Cuándo |
 |---|---|
-| 400 | Lista vacía; `patientId`, `packageId` o `address` vacíos; `additionalDetails` vacío (lo rechaza el VO `ValidatedPackage`) |
-| 404 | `ClinicService.PatientsNotFound` (algún paciente no existe) o `Route.NoRouteForToday` |
-| 422 | `ClinicService.RequestFailed` / `ClinicService.EmptyResponse` (ClinicService respondió error o nada); `Route.CannotAddDelivery` (la ruta de hoy ya está `Completed`/`Cancelled`) |
+| 400 | Lista vacía; `patientId`, `patientName`, `packageId` o `address` vacíos; `additionalDetails` vacío (lo rechaza el VO `ValidatedPackage`) |
+| 404 | `Route.NoRouteForToday` |
+| 422 | `Route.CannotAddDelivery` (la ruta de hoy ya está `Completed`/`Cancelled`) |
 
 Publica un `delivery-added-to-route` por ítem. Si se reenvía el mismo lote, se crean entregas **duplicadas** (no hay unicidad por `packageId`).
 
 ### `GET /api/v1/couriers/{courierId}/route/today`
-**Para qué:** que el repartidor vea su ruta de hoy, en orden, con el nombre de cada paciente.
+**Para qué:** que el repartidor vea su ruta de hoy, en orden, con el nombre y el teléfono de cada paciente.
 **Llamado por:** app del repartidor.
 **Scope:** ninguno.
 
@@ -112,18 +113,17 @@ Response `200`:
   "courierId": "…guid…",
   "routeId": "…guid…",
   "deliveries": [
-    { "packageDeliveryId": "…guid…", "sequenceOrder": 1, "patientName": "Juana Pérez", "address": "Av. Banzer 123, Santa Cruz", "status": "InProgress" }
+    { "packageDeliveryId": "…guid…", "sequenceOrder": 1, "patientName": "Juana Pérez", "patientPhone": "+591 700 11111", "address": "Av. Banzer 123, Santa Cruz", "status": "InProgress" }
   ]
 }
 ```
-- `patientName` sale de ClinicService. Si el paciente no viene en la respuesta, se muestra el `patientId`. Si ClinicService **falla** (no-2xx), la consulta entera devuelve 422.
+- `patientName` y `patientPhone` se guardan con la entrega: llegan en `package-validated` (MS5#4 y #8, kernel 1.5.0) y `patientName` también en `POST /packages/deliveries`. Si el nombre está vacío (entregas anteriores a MS5#4) se muestra el `patientId`; `patientPhone` es `null` si no se conoce (carga manual, entrega anterior a 1.5.0 o paciente sin teléfono). La consulta ya no depende de ningún servicio externo.
 - `sequenceOrder` es el calculado al iniciar la ruta; las entregas sin secuencia reciben su posición en la lista.
 - Las entregas salen en el orden en que están cargadas, **no ordenadas** por `sequenceOrder`.
 
 | Código | Cuándo |
 |---|---|
 | 404 | `Courier.NotFound` o `Route.NoRouteForToday` |
-| 422 | `ClinicService.RequestFailed` / `ClinicService.EmptyResponse` |
 
 ### `POST /api/v1/routes/{routeId}/start`
 **Para qué:** el repartidor sale de la sucursal. Calcula la secuencia de entrega y pasa la ruta y todas sus entregas a `InProgress`.
@@ -159,7 +159,7 @@ Response `200`:
 | 404 | `Route.NotFound` o `Route.DeliveryNotFound` (la entrega no es de esa ruta) |
 | 422 | `Delivery.CannotComplete` (ya era terminal: un reintento), o `Route.CannotComplete` (era la última entrega abierta de una ruta que nunca se inició; se revierte todo) |
 
-Publica `delivery-completed` y, si era la última entrega abierta, también `route-completed`. No llama a MS4: MS4 consume el evento (cola `ms4.delivery-completed`, PR #3 de MS4 sin merge), sin la evidencia.
+Publica `delivery-completed` (con la foto y la firma desde el kernel 1.5.0) y, si era la última entrega abierta, también `route-completed`. No llama a MS4: MS4 consume el evento (cola `ms4.delivery-completed`, MS4#3 y #10) y guarda la evidencia.
 
 ### `POST /api/v1/routes/{routeId}/deliveries/{deliveryId}/fail`
 **Para qué:** registrar que no se pudo entregar y por qué.
@@ -195,8 +195,6 @@ Configurado en `src/Nurtricenter.Api/DomainExceptionHandler.cs` (un `IExceptionH
 | `DomainException` con `ErrorType.Validation` (VOs, y `ValidationError` del `ValidationBehavior` de MediatR) | 400 |
 | `DomainException` con `ErrorType.NotFound` | 404 |
 | `DomainException` con `ErrorType.Conflict` (definido, ningún caso de uso lo usa) | 409 |
-| `DomainException` con `ErrorType.Problem` (guardas de estado y fallos de ClinicService) | 422 |
+| `DomainException` con `ErrorType.Problem` (guardas de estado) | 422 |
 | `DomainException` con otro `ErrorType` (`Failure`) | 500 |
 | Cualquier otra excepción | 500 (handler por defecto de ASP.NET Core) |
-
-Que un fallo de ClinicService devuelva **422** (y no 502/503) es una decisión discutible: ver ms5-gap-05.

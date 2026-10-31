@@ -5,7 +5,7 @@ El modelo es **anémico**: entidades con setters públicos y casi sin métodos. 
 ## Lenguaje ubicuo
 | Término | Significado aquí |
 |---|---|
-| Paciente (`Paciente`) | Persona registrada en la clínica: `CI`, `Nombre`, `Apellido`. No tiene teléfono, dirección ni usuario de identity |
+| Paciente (`Paciente`) | Persona registrada en la clínica: `CI`, `Nombre`, `Apellido`. `Telefono` es opcional (desde MS1#1); no tiene dirección ni usuario de identity |
 | Consulta inicial (`ConsultaInicial`) | Primera atención: peso, altura, composición corporal, antecedentes y hábitos alimenticios. Un paciente puede tener varias |
 | Aprobar consulta | Poner `ConsultaInicial.Estado = true` (recepción) |
 | Antecedente (`Antecedente`) | Descripción + `Problema` (`BajoPeso`, `SobrePeso`). Se guarda como JSON dentro de la consulta |

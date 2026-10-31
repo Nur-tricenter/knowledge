@@ -31,7 +31,7 @@
 - **Qué haría falta:** referenciar `Nur.Tricenter.Security`, definir scopes de MS1 en `Nur.Tricenter.Access` (hoy no hay) y exigirlos por endpoint.
 
 ### ms1-gap-03 — El contrato que MS5 espera no existe
-- **Resuelto en MS1#1:** el endpoint existe y `Paciente.Telefono` es opcional. MS5 dejó de llamarlo (MS5#4), por lo que sigue sin consumidor. Lo de abajo es el estado previo.
+- **Resuelto en MS1#1:** el endpoint existe y `Paciente.Telefono` es opcional. MS5 dejó de llamarlo (MS5#4), por lo que sigue sin consumidor. Hoy el teléfono llega a MS5 por otra vía: MS3 lo lee de `GET /Patient/{id}` y lo manda en `PackageValidated.PatientPhone` (MS3#9, MS5#8, kernel 1.5.0). Lo de abajo es el estado previo.
 - **Qué pasa:** MS5 llama a `POST /api/v1/patients/contact-information` (array de `patientId` → `[{ patientId, phoneNumber, fullName }]`) contra un mock de Postman. MS1 no tiene ese endpoint ni guarda teléfono.
 - **Qué haría falta:** agregar teléfono al `Paciente` y el endpoint (detrás del gateway, con service account de MS5), o que MS5 se alimente de `paciente-published`. Acordar un único contrato con MS3, que también simula pacientes.
 

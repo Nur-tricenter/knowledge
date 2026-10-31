@@ -1,6 +1,6 @@
 # Flujos — MS5
 
-El orden sigue el día de un repartidor. Todos los flujos cruzan al menos una frontera: el gateway, ClinicService o RabbitMQ. F5 describe cómo MS4 recibe el resultado por eventos y lo que todavía falta.
+El orden sigue el día de un repartidor. Todos los flujos cruzan al menos una frontera: el gateway o RabbitMQ. F5 describe cómo MS4 recibe el resultado por eventos y lo que todavía falta.
 
 ## F1 — Alta de repartidor y de su ruta (Operaciones → MS5 ⇢ RabbitMQ)
 - **Actor:** operaciones / logística.
@@ -42,37 +42,34 @@ sequenceDiagram
   Note over MQ: solo nurtricenter.default está enlazada: nadie reacciona
 ```
 
-## F2 — Recibir los paquetes del día (Operaciones → MS5 → ClinicService)
+## F2 — Recibir los paquetes del día (MS3 ⇢ MS5, o operaciones a mano)
 - **Actor:** operaciones / logística.
-- **Disparador:** `POST /api/v1/packages/deliveries` con un array de paquetes. En `main` es la **única** entrada: el consumo del evento `package-validated` de MS3 existe solo en la rama `dev`, sin merge (ms5-gap-03).
-- **Precondición:** que exista al menos una ruta con fecha de hoy (las crea el administrador).
+- **Disparador:** el evento `package-validated` de MS3 (cola `ms5.package-validated`, consumidor idempotente desde MS5#3), o a mano `POST /api/v1/packages/deliveries` con un array de paquetes.
+- **Precondición:** que exista una ruta con la fecha de entrega del paquete (la `DeliveryDate` del evento; en la carga manual, la de hoy). Las crea el administrador.
 - **Camino feliz:**
-  1. Pide a ClinicService el contacto de todos los `patientId` distintos del lote: todos tienen que existir.
-  2. Toma la ruta de hoy **creada más recientemente** (de cualquier repartidor) y agrega una `Delivery` `Pending` por ítem.
+  1. Valida el paquete. El nombre y el teléfono del paciente ya vienen en el evento (`PatientName`, `PatientPhone`); no se consulta a MS1.
+  2. Toma la ruta **más reciente de esa fecha** (de cualquier repartidor) y agrega una `Delivery` `Pending` por ítem.
   3. Una sola transacción guarda las entregas y una fila de outbox de `delivery-added-to-route` por ítem. Si `packageId` es el `packId` de MS4, MS4 vincula la entrega con su día al consumir ese evento.
 - **Errores:**
   | Situación | Resultado |
   |---|---|
-  | Algún paciente no existe en ClinicService | 404 `ClinicService.PatientsNotFound`; no se guarda nada |
-  | ClinicService responde error | 422 `ClinicService.RequestFailed` |
-  | No hay ruta para hoy | 404 `Route.NoRouteForToday` |
+  | No hay ruta para esa fecha | Evento: 404 `Route.NoRouteForDate`, reintentos y luego cola de error. Carga manual: 404 `Route.NoRouteForToday` |
   | La ruta de hoy ya está cerrada | 422 `Route.CannotAddDelivery` |
-- **Idempotencia / reintentos:** **no es idempotente.** Reenviar el lote duplica las entregas. Con varios repartidores el mismo día, todos los paquetes van a la última ruta creada: el reparto entre repartidores no está modelado (ms5-gap-06).
-- Diagrama de secuencia: ver [integrations.md](./integrations.md).
+- **Idempotencia / reintentos:** el consumo del evento es idempotente (inbox). `POST /packages/deliveries` **no** lo es: reenviar el lote duplica las entregas. Con varios repartidores el mismo día, todos los paquetes van a la última ruta creada: el reparto entre repartidores no está modelado (ms5-gap-06).
+- Diagrama de la carga por evento: ver [integrations.md](./integrations.md) y [messaging.md](./messaging.md).
 
-## F3 — El repartidor inicia su ruta y la consulta (App → MS5 → ClinicService)
+## F3 — El repartidor inicia su ruta y la consulta (App → MS5)
 - **Actor:** repartidor desde su app.
 - **Disparadores:** `POST /api/v1/routes/{routeId}/start` y `GET /api/v1/couriers/{courierId}/route/today`.
 - **Precondición:** ruta `Pending` con al menos una entrega.
 - **Camino feliz:**
   1. `start`: calcula la secuencia de entrega desde la sucursal (vecino más cercano) y pasa la ruta y todas sus entregas a `InProgress` → `route-started`.
-  2. `route/today`: devuelve las paradas con su secuencia, dirección, estado y el **nombre del paciente** pedido a ClinicService en ese momento.
+  2. `route/today`: devuelve las paradas con su secuencia, dirección, estado el **nombre** y el **teléfono** del paciente, guardados con la entrega.
 - **Errores:**
   | Situación | Resultado |
   |---|---|
   | Ruta ya iniciada / sin entregas | 422 `Route.CannotStart` / `Route.NoDeliveries` |
   | No hay ruta de hoy para ese repartidor | 404 `Route.NoRouteForToday` |
-  | ClinicService caído | El `GET` falla (422 o 500): **el repartidor se queda sin ver su ruta** |
 - **Idempotencia / reintentos:** el `GET` sí lo es. El `start` no: un reintento da 422 aunque la ruta ya haya arrancado bien.
 
 ```mermaid
@@ -80,16 +77,13 @@ sequenceDiagram
   actor R as Repartidor
   participant GW as Gateway
   participant MS5
-  participant CS as MS1 ClinicService (mock)
   R->>GW: POST /api/nurtricenter/v1/routes/{routeId}/start
   GW->>MS5: POST /api/v1/routes/{routeId}/start
   MS5->>MS5: secuencia desde branchCoordinates, todo → InProgress (+ outbox RouteStartedEvent)
   MS5-->>R: 200 { routeId, deliveries: [ { deliveryId, sequenceOrder, address } ] }
   R->>GW: GET /api/nurtricenter/v1/couriers/{courierId}/route/today
   GW->>MS5: GET /api/v1/couriers/{courierId}/route/today
-  MS5->>CS: POST /api/v1/patients/contact-information [patientIds] (directo, sin token)
-  CS-->>MS5: 200 [ { patientId, fullName, … } ]
-  MS5-->>R: 200 { routeId, deliveries: [ { sequenceOrder, patientName, address, status } ] }
+  MS5-->>R: 200 { routeId, deliveries: [ { sequenceOrder, patientName, patientPhone, address, status } ] }
 ```
 
 ## F4 — Registrar cada entrega y cerrar la ruta (App → MS5 ⇢ RabbitMQ)
@@ -130,7 +124,7 @@ sequenceDiagram
   W->>DB: filas pendientes
   W--)MQ: DeliveryCompleted → delivery-completed
   W--)MQ: RouteCompleted → route-completed (si aplica)
-  Note over MQ: MS4 lo consume por ms4.delivery-completed (PR #3 de MS4, sin merge) y cierra el día si el PackageId era su packId
+  Note over MQ: MS4 lo consume por ms4.delivery-completed (MS4#3) y cierra el día; guarda la foto y la firma (kernel 1.5.0)
 ```
 
 ## F5 — El resultado llega a MS4 por eventos (MS5 ⇢ RabbitMQ ⇢ MS4) ⚠ parcial
@@ -139,8 +133,7 @@ sequenceDiagram
 - **Lo que falta:**
   | Situación | Resultado |
   |---|---|
-  | El `PackageId` cargado en MS5 no es el `packId` de MS4 (texto libre en `POST /packages/deliveries`; el id de MS3 si llega por el consumidor de `dev`) | MS4 no vincula la entrega: el día queda en `ReadyForProduction` (ms5-gap-02) |
-  | PR #3 de MS4 sin merge | Nadie lee las colas `ms4.delivery-*`: los mensajes se acumulan |
+  | La entrega se cargó a mano y su `PackageId` no es el `packId` de MS4, ni trae `DeliveryDayId` | MS4 recurre al `PackageId` numérico y luego al paciente; si no encuentra el día, no lo vincula y queda en `ReadyForProduction` (ms5-gap-02) |
   | Entrega exitosa | La evidencia (foto, firma) no viaja en `DeliveryCompleted`: queda solo en MS5 |
 
 ```mermaid

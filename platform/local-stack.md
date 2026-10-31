@@ -12,7 +12,7 @@ Runbook para levantar **toda** la plataforma en una máquina con Docker Compose 
 | Docker Desktop (Compose ≥ 2.29) | Infra y procesos de cada servicio |
 | .NET SDK **8** y **10** | net8.0: MS2, identity, MS3. net10.0: gateway, MS4, MS5, MS1. Los scripts compilan en el host y los contenedores montan la salida |
 | `NUGET_USERNAME` / `NUGET_TOKEN` (variables de **usuario**) | Feed de GitHub Packages de la org (`Nur.Tricenter.*`), PAT con `read:packages`. Lo usan MS2, MS4, MS5 e identity en su `NuGet.config` |
-| `.env` de MS5 (copiar `ms5-logistics-and-delivery/.env.example`) | `ConnectionStrings__DefaultConnection` de su BD en **Neon** (MS5 no usa el Postgres compartido). Sin él, MS5 arranca pero falla en la primera consulta. **Sin credenciales de Neon:** apuntarlo a `Host=nur-tricenter-postgres;Port=5432;Database=ms5_logistics;Username=dev-only;Password=dev-only-password` y migrar una vez con `dotnet ef database update` contra `localhost:5433` (README de nur-tricenter-local, "Offline option"; la BD la crea `start-stack` desde #7) |
+| `.env` de MS5 | `ConnectionStrings__DefaultConnection` de su BD. Por defecto **Neon** (copiar `.env.example`); sin credenciales de Neon, `setup-project` crea el `.env` desde `.env.local-postgres.example`, que apunta al Postgres compartido (`ms5_logistics`, la crea `start-stack`). El esquema lo aplica el job `nur-tricenter-nurtricenter-migrate` (`--migrate`, MS5#6): ya no se corre `dotnet ef` a mano. Sin `.env`, MS5 arranca pero falla en la primera consulta |
 | Puertos libres 5433, 5672, 8500, 15005, 15672 (y 18080/18083 en modo dev) | Ver la sección 4 |
 
 ## 2. Carpetas
@@ -58,7 +58,7 @@ Todos los repos van **como hermanos** de `nur-tricenter-local`. `scripts/setup-p
 | `nur-tricenter-identity-api` / `-workerservice` / `-migrate` | — | `identity-service` → `/api/identity-service` | `nur_tricenter_identity` |
 | `nur-tricenter-contracting-api` / `-workerservice` | — (18083 en dev) | `contracting` → `/api/contracting` | `nur_tricenter_contracting` |
 | `nur-tricenter-delivery-calendar-api` / `-workerservice` / `-migrate` | — | `delivery-calendar` → `/api/delivery-calendar` | `ms4_delivery_calendar` |
-| `nur-tricenter-nurtricenter-api` / `-workerservice` | — | `nurtricenter` → `/api/nurtricenter` | Neon (fuera del stack) |
+| `nur-tricenter-nurtricenter-api` / `-workerservice` | — | `nurtricenter` → `/api/nurtricenter` | la del `.env` de MS5 (Neon o `ms5_logistics` local); `nur-tricenter-nurtricenter-migrate` aplica el esquema |
 | `nur-tricenter-clinica-nutricional-api` / `-workerservice` / `-migrate` | — | `clinica-nutricional` → `/api/clinica-nutricional` | `ms1_clinica_nutricional` |
 
 - Las credenciales de desarrollo (Postgres, RabbitMQ `guest`, admin de identity) están en los compose y scripts del repo; no se repiten aquí.
@@ -116,8 +116,9 @@ Los flujos de punta a punta (contrato → calendario → menú → orden de prod
 `nur-tricenter-local/scripts/e2e-smoke.py` (en #7; Python 3 sin dependencias) recorre un paciente por todos los servicios **a través del gateway** y termina con código ≠ 0 en el primer salto roto:
 
 ```bash
-python scripts/e2e-smoke.py                                              # paciente 2, entrega exitosa
-python scripts/e2e-smoke.py 00000000-0000-0000-0000-000000000003 --fail  # entrega fallida
+python scripts/e2e-smoke.py                    # registra un paciente nuevo en MS1, entrega exitosa
+python scripts/e2e-smoke.py --fail             # igual, pero la entrega falla
+python scripts/e2e-smoke.py <id-paciente-ms1>  # reutiliza un paciente que ya existe en MS1
 ```
 
 | Paso | Servicio | Cómo se comunica |
@@ -136,10 +137,10 @@ python scripts/e2e-smoke.py 00000000-0000-0000-0000-000000000003 --fail  # entre
 Resultado del 2026-10-28: **verde** con entrega exitosa (2 pacientes) y fallida (1 paciente), sin errores en ningún worker. Algunas búsquedas del script leen las BD con `docker exec … psql`, porque ningún servicio las expone (X-17).
 
 **Para la demo:**
-- Usar los pacientes simulados de MS3 (`00000000-0000-0000-0000-00000000000{1,2,3}`).
+- Usar pacientes reales de MS1: el smoke registra uno solo (con `POST /api/clinica-nutricional/v1/Patient/CreatePaciente`; el campo `telefono` es opcional y viaja hasta la ruta del repartidor). Los 3 simulados de MS3 solo existen si no se configura `Clinic__BaseUrl`.
 - Crear un plan nuevo en MS2: los sembrados antes de que existieran las colas de MS3 no los conoce MS3 (X-15).
 - Asignar las recetas unos segundos antes de `resolve-daily-catalog`: el read model de MS2 es eventual.
-- Para empezar de cero los datos de negocio: `DROP DATABASE … WITH (FORCE)` de `nur_tricenter_contracting`, `ms4_delivery_calendar` y `ms5_logistics`, volver a correr `start-stack` (las recrea) y migrar MS5.
+- Para empezar de cero los datos de negocio: `DROP DATABASE … WITH (FORCE)` de `nur_tricenter_contracting`, `ms4_delivery_calendar` y `ms5_logistics`, y volver a correr `start-stack` (las recrea y el job de MS5 migra).
 
 ## Convenciones para que un servicio entre al stack
 1. Publicar un fragmento `<servicio>.compose.yml` en su repo, con contenedores `nur-tricenter-<rol>`.

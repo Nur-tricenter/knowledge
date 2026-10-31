@@ -195,7 +195,7 @@ gaps:
     severity: high
     blocked_by: identity
   - id: ms3-gap-02
-    summary: Los pacientes son 3 simulados; no hay MS1.
+    summary: Resuelto (MS3#8, MS1#2). MS3 lee los pacientes de MS1 con Clinic__BaseUrl; sin ella siguen los 3 simulados.
     severity: high
     blocked_by: ms1
   - id: ms3-gap-03
