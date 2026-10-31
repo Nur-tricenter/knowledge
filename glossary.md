@@ -19,7 +19,7 @@ Términos del negocio y técnicos usados en toda la plataforma. Si tu servicio u
 | Orden de producción | Foto consolidada de todo lo que hay que producir para una fecha | MS4 (la consume MS3) |
 | Orden de producción diaria (MS3) | Recetas y raciones totales que la cocina produce un día, armada con el menú de cada entrega de MS4. No es la orden de producción de MS4 | MS3 |
 | Paquete | Entrega física en producción: se arma, se etiqueta y pasa control de calidad antes de liberarse a logística | MS3 |
-| Service account | Usuario técnico para llamadas servicio a servicio con el mínimo de scopes (`ms3-service`, `ms4-service`) | identity |
+| Service account | Usuario técnico con el mínimo de scopes (`ms3-service`, `ms4-service`); ya no lo usa ningún servicio (las llamadas servicio a servicio pasaron a eventos), solo la vista de seguridad de la demo | identity |
 | Ruta | Conjunto de entregas asignadas a un repartidor en un día | MS5 |
 | Repartidor (courier) | Persona que ejecuta la ruta | MS5 |
 | Entrega / parada (`Delivery`) | Un paquete a llevar a una dirección dentro de una ruta. Entidad hija de la ruta en MS5; no confundir con el `DeliveryDay` de MS4 | MS5 |

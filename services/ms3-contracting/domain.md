@@ -122,7 +122,7 @@ stateDiagram-v2
 | Un control solo se cobra a quien no tiene contrato activo | `ProcessControlChargeCommandHandler` | 409 `ACTIVE_CONTRACT` |
 | El flujo del paquete es secuencial | `Package.RegisterAssembly` / `GenerateLabel` / `ApproveQualityControl` | `InvalidOperationException` → 500 |
 | La orden diaria no puede estar vacía | `DailyProductionOrder.ConsolidateOrder` + `GetDailyOrderQueryHandler` | 422 `NO_RECIPES` (el handler lo detecta antes del dominio) |
-| El cobro no depende de MS4 | Outbox: fila `CreateSchedule` guardada en un segundo `CommitAsync` tras el pago (no atómico, `ms3-gap-11`) | MS4 caído: la fila queda pendiente y se reintenta |
+| El cobro no depende de MS4 | Outbox: fila `CreateSchedule` (published as `contract-activated`) guardada en un segundo `CommitAsync` tras el pago (no atómico, `ms3-gap-11`) | Broker o MS4 caídos: la fila queda pendiente y se reintenta |
 
 ## Datos que son copia de otro servicio
 | Dato | De | Cómo se mantiene |
@@ -130,4 +130,5 @@ stateDiagram-v2
 | `CatalogPlans` (id, nombre, tipo, días, comidas por día) | MS2 | Eventos `meal-plan-published` (upsert). Sin precio: `MealPlanPublished` no lo trae, así que el costo proyectado es 0 |
 | `CatalogRecipes` (id, nombre, instrucciones) | MS2 | Eventos `recipe-published` y `recipe-updated` (upsert) |
 | `InboxMessages` | — | Un registro por mensaje procesado, para ignorar duplicados |
-| Pacientes | MS1 | Se consultan por REST cada vez (`GET /api/clinica-nutricional/v1/Patient/{id}` con `ms3-service`, desde MS3#8); no hay copia local. Sin `Clinic__BaseUrl` quedan los 3 simulados |
+| `ClinicPatients` (id, full name, phone, `SnapshotAt`) | MS1 | `paciente-published` events (`PatientPublished`, upsert; an older snapshot is ignored). Read when `Projections__Enabled=true` (the platform); standalone the 3 simulated patients remain. No backfill |
+| `ScheduledDeliveries` (delivery day id, delivery date, patient, plan, hour, address, coordinates, menu JSON, `SnapshotAt`) | MS4 | `production-order-ready` events (`ProductionOrderReady`): the rows of the order's date are replaced. Read when `Projections__Enabled=true`; the daily order, label and validation use it |

@@ -7,7 +7,7 @@
 - **Formato de error:** no hay manejador de excepciones ni ProblemDetails configurado. Un recurso inexistente termina en **500** (los repositorios lanzan `NullReferenceException`).
 - **Ids:** todos GUID.
 - **Documentación interactiva:** NSwag, `/swagger`, activo salvo `OpenApi:Enabled=false` (la plataforma lo apaga). Cada llamada necesita el token.
-- **Llamado por:** MS3 (`GET /api/v1/Patient/{id}`, como `ms3-service`, desde MS3#8). `contact-information` no lo llama nadie desde que MS5 dejó el ClinicService (MS5#4). El README prevé un frontend (paciente, recepción, nutricionista) que no existe; hoy se usa desde Swagger y desde `IntegrationTests`.
+- **Llamado por:** nadie entre servicios. MS3 llamaba a `GET /api/v1/Patient/{id}` (como `ms3-service`, MS3#8) hasta MS3#11, que lo reemplazó por el evento `paciente-published`; `contact-information` no lo llama nadie desde que MS5 dejó el ClinicService (MS5#4). El README prevé un frontend (paciente, recepción, nutricionista) que no existe; hoy se usa desde Swagger y desde `IntegrationTests`.
 
 ## Contrato para MS5: `POST /api/v1/patients/contact-information`
 Cuerpo: arreglo de ids de paciente (`["<guid>", …]`). Respuesta: `{ value: [{ patientId, phoneNumber, fullName }], isSuccess, … }`; los ids que no existen se omiten. Controlador `PatientsContactController` (`api/v1/patients`). El teléfono sale de `Paciente.Telefono`, opcional en `CreatePaciente` (`telefono`).
@@ -36,11 +36,11 @@ Los nombres de ruta salen de `nameof(...)`, así que respetan mayúsculas tal co
 ## Detalle por endpoint
 
 ### `POST /api/v1/Patient/CreatePaciente`
-**Para qué:** registrar un paciente. Dispara `PacienteCreated` → outbox → `paciente-published`.
+**Para qué:** registrar un paciente. Dispara `PacienteCreated` → outbox → `paciente-published` (kernel `PatientPublished`, que MS3 consume).
 
 ```json
 // request
-{ "ci": "1234567", "nombre": "Ana", "apellido": "Pérez" }
+{ "ci": "1234567", "nombre": "Ana", "apellido": "Pérez", "telefono": "70012345" }
 // 200
 { "value": "…guid del paciente…", "isSuccess": true, "isFailure": false }
 ```

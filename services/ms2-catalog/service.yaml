@@ -1,4 +1,4 @@
-# Ficha estructurada de MS2. Fuente: código de Nur-tricenter/ms2-plans-and-recipes-catalog (2026-10-24; revisada contra main ca0c9de el 2026-10-28).
+# Ficha estructurada de MS2. Fuente: código de Nur-tricenter/ms2-plans-and-recipes-catalog (2026-10-24; revisada contra main ca0c9de el 2026-10-28; actualizada el 2026-10-31 a MS2#6: meal-plan-composition-changed, sin consumidores REST de servicio).
 
 id: ms2
 name: Catálogo de planes y recetas (Catalog)
@@ -9,9 +9,9 @@ repo: Nur-tricenter/ms2-plans-and-recipes-catalog
 status: complete
 summary: >-
   Fuente de verdad del contenido nutricional de la plataforma: alimentos con facts nutricionales,
-  recetas compuestas por ingredientes y planes de comida de 15 o 30 días. Publica 5 eventos de
-  integración vía outbox y proyecta PlanAuthors desde identity. Proveedor síncrono de la
-  composición de planes para MS4 (job diario).
+  recetas compuestas por ingredientes y planes de comida de 15 o 30 días. Publica 6 eventos de
+  integración vía outbox (incluida la composición completa del plan, que MS4 proyecta) y proyecta
+  PlanAuthors desde identity. Ningún servicio lo llama por REST.
 stack: [.NET 8, Clean Architecture, DDD, MediatR, EF Core 9, PostgreSQL, RabbitMQ (Joseco), Consul]
 
 runtime:
@@ -128,8 +128,8 @@ endpoints:
   - method: GET
     path: /api/v1/meal-plans/{mealPlanId}
     scope: catalog.mealPlan:read
-    callers: [frontend, ms4]
-    summary: Composición completa del plan (plan → días → tiempos → recetas → ingredientes), con authorId/authorName.
+    callers: [frontend]
+    summary: Composición completa del plan (plan → días → tiempos → recetas → ingredientes), con authorId/authorName. MS4 no longer calls it (meal-plan-composition-changed event, MS4#12).
     idempotent: true
   - method: GET
     path: /api/v1/meal-plans
@@ -172,6 +172,11 @@ events_published:
     event_type: MealPlan.Published
     trigger: Se crea un plan (POST /meal-plans).
     outbox: true
+  - exchange: meal-plan-composition-changed
+    contract: MealPlanCompositionChanged
+    event_type: MealPlan.CompositionChanged
+    trigger: A meal time is added to a plan, or a recipe is assigned to / removed from a meal time (POST /meal-plans/meal-times, POST /meal-plans/assign-recipes, DELETE /meal-plans/{id}/meal-times/{id}/recipes/{id}). Full snapshot of the plan built from the write side, one message per change. MS4 projects it into PlanDayMenus (queue ms4.meal-plan-composition-changed).
+    outbox: true
 
 events_consumed:
   - queue: ms2.user-published
@@ -190,7 +195,7 @@ gaps:
     summary: food-nutritional-info-updated cableado pero inalcanzable (UpdateNutritionalInfo sin invocador).
     severity: medium
   - id: ms2-gap-03
-    summary: recipe-updated cableado pero inalcanzable vía API; alta/baja de ingredientes no lo dispara.
+    summary: recipe-updated cableado pero inalcanzable vía API; alta/baja de ingredientes no lo dispara (unchanged by MS2#6; MS4 still consumes the queue).
     severity: medium
   - id: ms2-gap-04
     summary: RecipePublished/RecipeUpdated no transportan ingredientes; no hay evento de receta completa.
@@ -199,7 +204,7 @@ gaps:
     summary: FoodUpdated solo se proyecta al read model; no hay contrato de integración para cambios de alimento.
     severity: medium
   - id: ms2-gap-06
-    summary: Cambios de plan (MealPlanUpdated, MealTimeAddedToPlan, RecipeAssignedToMealTime, RecipeRemovedFromMealTime) no se publican externamente.
+    summary: "Resolved (MS2#6, 2026-10-31): composition changes (MealTimeAddedToPlan, RecipeAssignedToMealTime, RecipeRemovedFromMealTime) are published as meal-plan-composition-changed. MealPlanUpdated is still not published (nothing invokes it, ms2-gap-10)."
     severity: low
   - id: ms2-gap-07
     summary: Autorización por objeto (BOLA); cualquier token con scope edit modifica cualquier recurso.
@@ -220,4 +225,7 @@ gaps:
     severity: medium
   - id: ms2-gap-12
     summary: Los scopes catalog.{food,recipe,mealPlan}:manage existen en el kernel pero ningún endpoint los exige; CatalogRoutes del kernel está desactualizado respecto de las rutas reales.
+    severity: low
+  - id: ms2-gap-13
+    summary: meal-plan-composition-changed has no backfill (a plan composed before MS2#6 is unknown to MS4) and MS2 emits one full snapshot per composition change.
     severity: low

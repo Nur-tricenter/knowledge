@@ -1,18 +1,18 @@
-# Ficha estructurada de MS1. Fuente: código de Juandcode/ClinicaNutricionalMicroservicio1, rama main (2026-10-24).
-# Repo FUERA de la org Nur-tricenter; no integrado a la plataforma hoy (sin Consul, gateway ni compose de plataforma).
+# Ficha estructurada de MS1. Fuente: código de Nur-tricenter/ms1-gestion-clinica-nutricional, rama main (actualizado el 2026-10-31 a MS1#3).
+# Integrado a la plataforma desde 2026-10-31 (Postgres, JWT, Consul, ms1.compose.yml); publica el contrato PatientPublished del kernel 1.6.0.
 
 id: ms1
 name: Clínica nutricional (Clinic)
 owner:
   name: Diego Cabrera
   github: Juandcode
-repo: Juandcode/ClinicaNutricionalMicroservicio1
+repo: Nur-tricenter/ms1-gestion-clinica-nutricional
 status: draft
 summary: >-
   Registra pacientes, sus consultas iniciales (antecedentes y hábitos) y los planes alimenticios de la
-  clínica con sus evaluaciones de control. Publica paciente-published por outbox. Hoy no está integrado
-  a la plataforma: sin auth, sin Consul ni gateway, y nadie lo llama.
-stack: [.NET 10, ASP.NET Core Controllers, MediatR, EF Core, SQL Server, RabbitMQ (Joseco), NSwag]
+  clínica con sus evaluaciones de control. Publica paciente-published (kernel PatientPublished, con teléfono) por outbox; MS3
+  lo proyecta. Integrado a la plataforma (JWT, Consul, gateway); sin scopes propios todavía.
+stack: [.NET 10, ASP.NET Core Controllers, MediatR, EF Core, PostgreSQL, RabbitMQ (Joseco), NSwag]
 
 runtime:
   consul_name: null
@@ -43,7 +43,7 @@ endpoints:
     path: /api/v1/Patient/{id}
     scope: null
     callers: [frontend]
-    summary: Paciente con sus consultas iniciales. Inexistente → 500. No coincide con el GET /api/v1/patients/{id} que simula MS3.
+    summary: Paciente con sus consultas iniciales. Inexistente → 404 (MS1#2). Ningún servicio lo llama (MS3 usa la proyección de paciente-published).
     idempotent: true
   - method: POST
     path: /api/v1/Patient/{pacienteId}/Plan
@@ -128,32 +128,32 @@ sync_calls: []
 
 events_published:
   - exchange: paciente-published
-    contract: PacientePublished
-    event_type: Paciente.Published
-    trigger: Registro de un paciente (CreatePaciente). Contrato local, fuera del kernel y de la topología; hoy sale con PacienteId vacío y campos cruzados.
+    contract: PatientPublished
+    event_type: Patient.Published
+    trigger: Registro de un paciente (CreatePaciente). Snapshot completo con el contrato del kernel 1.6.0 (id, documento, nombre, apellido, teléfono opcional). Solo la creación publica; no hay caso de uso de actualización. MS3 lo proyecta.
     outbox: true
 
 events_consumed: []
 
 gaps:
   - id: ms1-gap-01
-    summary: Repo fuera de la org; sin Consul, gateway ni ms1.compose.yml; los scripts de nur-tricenter-local esperan src/ClinicaNutricional.* (X-04, X-12).
+    summary: Resuelto (MS1#1, local#8). Repo en la org, Consul, gateway y ms1.compose.yml; los scripts de nur-tricenter-local compilan los proyectos reales.
     severity: high
   - id: ms1-gap-02
-    summary: Sin autenticación ni scopes; Swagger siempre activo.
-    severity: high
+    summary: Parcial. JWT exigido desde MS1#1, pero sin scopes de MS1 en el kernel (cualquier token válido sirve).
+    severity: medium
   - id: ms1-gap-03
     summary: Resuelto (MS1#1). El endpoint existe y Paciente.Telefono es opcional; MS5 ya no lo llama, el teléfono llega por PackageValidated.PatientPhone (MS3#9, MS5#8).
     severity: high
     blocked_by: ms5
   - id: ms1-gap-04
-    summary: PacientePublished sale con PacienteId vacío, CI/Nombre/Apellido cruzados y probablemente publicado dos veces.
+    summary: Resuelto (MS1#1). El evento sale con el PacienteId real y los campos en su sitio; un solo mensaje por paciente. Hoy es el PatientPublished del kernel (MS1#3).
     severity: high
   - id: ms1-gap-05
-    summary: Contrato local sin EventType; exchange paciente-published fuera de la topología y sin consumidores.
+    summary: Resuelto (kernel 1.6.0 PatientPublished, MS1#3). Exchange y cola ms3.paciente-published en la topología; MS3 lo consume (MS3#11).
     severity: medium
   - id: ms1-gap-06
-    summary: Connection string SQL Server cableada (localhost\SQLEXPRESS, ClinicaNutricional3); no corre en contenedor.
+    summary: Resuelto (MS1#1). PostgreSQL con ConnectionStrings:DefaultConnection, migración InitialCreate y job --migrate.
     severity: high
   - id: ms1-gap-07
     summary: Paciente sin id de usuario de identity; X-08 sigue abierto.
@@ -172,9 +172,13 @@ gaps:
     summary: Rutas duplicadas sin /api (/Paciente, /Atencion).
     severity: low
   - id: ms1-gap-12
-    summary: dockerfile copia una carpeta inexistente y docker-compose usa una imagen externa con ASPNETCORE_URLS mal escrito.
+    summary: Resuelto (MS1#1). dockerfile y docker-compose corregidos; ms1.compose.yml para la plataforma.
     severity: low
   - id: ms1-gap-13
     summary: PlanAlimenticio no guarda ni valida el plan de MS2, aunque el README dice que sí.
     severity: medium
     blocked_by: ms2
+  - id: ms1-gap-14
+    summary: Solo la creación publica paciente-published (sin caso de uso de actualización) y no hay backfill de pacientes anteriores a MS1#3 (X-15).
+    severity: low
+    blocked_by: ms3

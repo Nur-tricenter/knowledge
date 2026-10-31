@@ -82,15 +82,17 @@ cd nur-tricenter-local
 
 | Cuenta | Scopes | La usa |
 |---|---|---|
-| `ms4-service` | `catalog.mealPlan:read` | MS4 → MS2 |
-| `ms3-service` | `deliveryCalendar.calendar:create`, `deliveryCalendar.productionOrder:read` | MS3 → MS4 |
+| `ms4-service` | `catalog.mealPlan:read` | nobody (kept for the demo console's security view) |
+| `ms3-service` | `deliveryCalendar.calendar:create`, `deliveryCalendar.productionOrder:read` | nobody (kept for the demo console's security view) |
+
+The services no longer log in with these accounts: MS3 and MS4 make no outbound HTTP (the former MS3 → MS4, MS3 → MS1 and MS4 → MS2 calls are events now). `start-stack` still creates them and their compose files no longer carry the `Identity__*`, `Clinic__*`, `DeliveryCalendar__*` or `Catalog__BaseUrl` settings.
 
 Variantes: `start-stack-dev.*` (overlay dev; el `.ps1` compila solo catálogo, gateway y MS3 y no crea service accounts) y `start-infrastructure.*` (solo Postgres, RabbitMQ y Consul).
 
 ## 6. Verificación
 1. `docker ps --filter name=nur-tricenter` → todo `healthy`; los `*-migrate` terminan en `Exited (0)`.
 2. Consul UI http://localhost:8500 → `catalog`, `identity-service`, `contracting`, `delivery-calendar`, `nurtricenter` en verde.
-3. RabbitMQ UI http://localhost:15672 → 18 exchanges y 34 colas.
+3. RabbitMQ UI http://localhost:15672 → 22 exchanges and 38 queues (the new ones: `contract-activated`, `production-order-ready`, `meal-plan-composition-changed`, `paciente-published`).
 4. Gateway (cada llamada debe responder el **servicio**, no un 404 vacío del gateway):
 ```bash
 curl http://localhost:15005/health
@@ -99,7 +101,7 @@ TOKEN=$(curl -s -X POST http://localhost:15005/api/identity-service/v1/auth/logi
 curl -H "Authorization: Bearer $TOKEN" http://localhost:15005/api/identity-service/v1/auth/me            # identity
 curl -H "Authorization: Bearer $TOKEN" http://localhost:15005/api/catalog/v1/meal-plans                  # MS2
 curl http://localhost:15005/api/contracting/v1/sim/patients/00000000-0000-0000-0000-000000000001          # MS3 (anónimo)
-curl -H "Authorization: Bearer $TOKEN" http://localhost:15005/api/delivery-calendar/v1/calendars/active-tomorrow  # MS4
+curl -H "Authorization: Bearer $TOKEN" http://localhost:15005/api/delivery-calendar/v1/calendars/active-tomorrow  # MS4 (read endpoint for the frontend/ops; no service calls it)
 curl -i http://localhost:15005/api/nurtricenter/v1/couriers/00000000-0000-0000-0000-000000000000/route/today     # MS5 (anónimo)
 ```
 Los flujos de punta a punta (contrato → calendario → menú → orden de producción → paquete → ruta → entrega) están en [communication.md](./communication.md) y en el `flows.md` de cada ficha.
@@ -110,7 +112,7 @@ Los flujos de punta a punta (contrato → calendario → menú → orden de prod
 - Empezar de cero (borra los datos y recrea las bases): el mismo `down` con `-v`, o `stop-infrastructure.* -v` (elimina el volumen `nur-tricenter-postgres-data`).
 
 ## 8. Topología de RabbitMQ
-`topology/rabbitmq-definitions.json` se importa al arrancar el broker: **18 exchanges, 34 colas y 34 bindings** (incluidas `ms4.delivery-*` desde nur-tricenter-local#6). Además, algunos workers declaran en runtime un sink propio fuera de la topología (`identity.default`, `catalog.default`, `nurtricenter.default`, `gestion-clinica-nutricional.default`). Copia legible: [../contracts/events.yaml](../contracts/events.yaml).
+`topology/rabbitmq-definitions.json` se importa al arrancar el broker: **22 exchanges, 38 queues and 38 bindings**: `ms4.delivery-*` (nur-tricenter-local#6) and, for the removal of the inter-service REST calls, the exchanges `contract-activated`, `production-order-ready`, `meal-plan-composition-changed` and `paciente-published` with the queues `ms4.contract-activated`, `ms3.production-order-ready`, `ms4.meal-plan-composition-changed` and `ms3.paciente-published`. Además, algunos workers declaran en runtime un sink propio fuera de la topología (`identity.default`, `catalog.default`, `nurtricenter.default`, `gestion-clinica-nutricional.default`). Copia legible: [../contracts/events.yaml](../contracts/events.yaml).
 
 ## Prueba de punta a punta
 `nur-tricenter-local/scripts/e2e-smoke.py` (en #7; Python 3 sin dependencias) recorre un paciente por todos los servicios **a través del gateway** y termina con código ≠ 0 en el primer salto roto:
@@ -123,12 +125,13 @@ python scripts/e2e-smoke.py <id-paciente-ms1>  # reutiliza un paciente que ya ex
 
 | Paso | Servicio | Cómo se comunica |
 |---|---|---|
-| Recetas y plan de 15 días con menú del día 1 | MS2 | REST (admin) → `meal-plan-published` a MS3 y MS4 |
-| Contrato y pago | MS3 | REST anónimo; el worker llama `POST /schedule` de MS4 como `ms3-service` |
-| Dirección del día 1 y `resolve-daily-catalog` | MS4 | REST; MS4 → MS2 `GET /meal-plans/{id}` como `ms4-service` |
-| `active-tomorrow` con `menu` | MS4 | REST |
-| Repartidor y ruta de hoy | MS5 | REST anónimo (la ruta tiene que existir antes que el paquete) |
-| `daily-order`, paquete, `assemble`, `label`, `validate` | MS3 | REST; MS3 → MS4 `active-tomorrow`; outbox → `package-validated` |
+| Patient registered | MS1 | REST → `paciente-published` to MS3 (MS3 projects it into `ClinicPatients`) |
+| Recipes and 15-day plan with the day 1 menu | MS2 | REST (admin) → `meal-plan-published` to MS3 and MS4, and `meal-plan-composition-changed` to MS4 (one per assignment; MS4 projects the menus into `PlanDayMenus`) |
+| Contract and payment | MS3 | anonymous REST; the outbox relay publishes `contract-activated`, MS4 creates the calendar. The script retries the contract POST until MS3 has projected the patient |
+| Day 1 address and `resolve-daily-catalog` | MS4 | REST; the menu comes from the `PlanDayMenus` projection (no call to MS2); the script retries until the composition is projected. Publishes `production-order-ready` through the MS4 outbox |
+| `active-tomorrow` with `menu` | MS4 | REST (read endpoint; no service calls it) |
+| Courier and today's route | MS5 | anonymous REST (the route has to exist before the package) |
+| `daily-order`, package, `assemble`, `label`, `validate` | MS3 | REST; the next-day deliveries come from the `ScheduledDeliveries` projection of `production-order-ready` (the script retries until MS3 has it); outbox → `package-validated` |
 | Entrega agregada a la ruta | MS5 | consume `ms5.package-validated` → publica `delivery-added-to-route` |
 | Enlace entrega → día | MS4 | consume `ms4.delivery-added-to-route`; usa `DeliveryDayId` (kernel 1.4.0) y, si falta, el `PackageId` numérico o el paciente |
 | `start` y `deliver` / `fail` | MS5 | REST → `delivery-completed` / `delivery-failed` |
@@ -137,9 +140,9 @@ python scripts/e2e-smoke.py <id-paciente-ms1>  # reutiliza un paciente que ya ex
 Resultado del 2026-10-28: **verde** con entrega exitosa (2 pacientes) y fallida (1 paciente), sin errores en ningún worker. Algunas búsquedas del script leen las BD con `docker exec … psql`, porque ningún servicio las expone (X-17).
 
 **Para la demo:**
-- Usar pacientes reales de MS1: el smoke registra uno solo (con `POST /api/clinica-nutricional/v1/Patient/CreatePaciente`; el campo `telefono` es opcional y viaja hasta la ruta del repartidor). Los 3 simulados de MS3 solo existen si no se configura `Clinic__BaseUrl`.
-- Crear un plan nuevo en MS2: los sembrados antes de que existieran las colas de MS3 no los conoce MS3 (X-15).
-- Asignar las recetas unos segundos antes de `resolve-daily-catalog`: el read model de MS2 es eventual.
+- Usar pacientes reales de MS1: el smoke registra uno solo (con `POST /api/clinica-nutricional/v1/Patient/CreatePaciente`; el campo `telefono` es opcional y viaja hasta la ruta del repartidor). The 3 simulated patients of MS3 only exist standalone; on the platform MS3 is started with `Projections__Enabled=true` and only knows the patients MS1 published, so a contract for any other id answers 404 `PATIENT_NOT_FOUND`.
+- Create a new plan in MS2 (and a new patient in MS1): there is no backfill, so plans and patients created before the projections existed are unknown to MS3 and MS4 (X-15). The smoke and the demo create fresh ones.
+- Assign the recipes a few seconds before `resolve-daily-catalog`: MS4 needs the `meal-plan-composition-changed` snapshot to be projected, or the day is skipped (stays `Scheduled`) until the job is re-run.
 - Para empezar de cero los datos de negocio: `DROP DATABASE … WITH (FORCE)` de `nur_tricenter_contracting`, `ms4_delivery_calendar` y `ms5_logistics`, y volver a correr `start-stack` (las recrea y el job de MS5 migra).
 
 ## Convenciones para que un servicio entre al stack

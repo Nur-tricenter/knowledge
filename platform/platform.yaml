@@ -31,7 +31,7 @@ components:
     kind: message-broker
     host_port: 5672
     management_port: 15672
-    summary: Exchanges fanout no durables, una cola {consumidor}.{exchange}. Topología importada de nur-tricenter-local (18 exchanges, 34 colas).
+    summary: Exchanges fanout no durables, una cola {consumidor}.{exchange}. Topology imported from nur-tricenter-local (22 exchanges, 38 queues; includes contract-activated, production-order-ready, meal-plan-composition-changed and paciente-published).
 
   - id: postgres
     name: PostgreSQL
@@ -47,5 +47,5 @@ components:
 kernels:
   - { package: Nur.Tricenter.Access, purpose: Nombres de scopes y reglas ruta→scope }
   - { package: Nur.Tricenter.Security, purpose: Validación JWT y policies por scope (AddSecurity) }
-  - { package: Nur.Tricenter.Integration, purpose: Contratos de eventos (IntegrationMessageContract) }
+  - { package: Nur.Tricenter.Integration, purpose: Event contracts (IntegrationMessageContract); 1.6.0 adds ContractActivated, ProductionOrderReady, MealPlanCompositionChanged and PatientPublished }
   - { package: Nur.Tricenter.Observability, purpose: OpenTelemetry, Jaeger, Serilog }

@@ -10,8 +10,8 @@
 ## Resumen
 | Método | Ruta | Llamado por | Scope | Idempotente |
 |---|---|---|---|---|
-| POST | `/schedule` | MS3 | `deliveryCalendar.calendar:create` | sí (por `contractId`) |
-| GET | `/calendars/active-tomorrow?date=` | MS3 | `deliveryCalendar.productionOrder:read` | sí |
+| POST | `/schedule` | Operaciones, tests (MS3 no longer calls it: it publishes `contract-activated`) | `deliveryCalendar.calendar:create` | sí (por `contractId`) |
+| GET | `/calendars/active-tomorrow?date=` | Frontend, operaciones (MS3 no longer calls it: it receives `production-order-ready`) | `deliveryCalendar.productionOrder:read` | sí |
 | GET | `/calendars/{id}` | Frontend | `deliveryCalendar.calendar:read` | sí |
 | GET | `/calendars/by-contract/{contractId}` | Frontend, demo console | `deliveryCalendar.calendar:read` | sí |
 | GET | `/calendars/by-patient/{patientId}` | Frontend, demo console | `deliveryCalendar.calendar:read` | sí |
@@ -26,7 +26,7 @@
 ## Detalle por endpoint
 
 ### `POST /api/v1/schedule`
-**Para qué:** crear el calendario cuando MS3 confirma el pago del contrato. Es el punto de entrada de todo el ciclo.
+**Para qué:** crear el calendario de un contrato. Es el punto de entrada de todo el ciclo. **MS3 no lo llama desde MS3#11/MS4#12:** el camino normal es el evento `contract-activated` (`ContractActivatedConsumer`), que envía el mismo `CreateScheduleCommand`. El endpoint queda para operaciones y pruebas.
 
 ```json
 // request
@@ -41,7 +41,7 @@
 | 422 | Value object inválido (duración ≠ 15/30, GUID vacío, fecha por defecto) |
 
 ### `GET /api/v1/calendars/active-tomorrow?date=YYYY-MM-DD`
-**Para qué:** MS3 obtiene la orden de producción del día siguiente. Reemplaza al evento `ProductionOrderRequired` de la fase de arquitectura. **Nunca resuelve bajo demanda**: lee lo que el job ya consolidó.
+**Para qué:** leer la orden de producción del día siguiente (frontend, operaciones). **MS3 ya no lo llama:** recibe la misma información en el evento `production-order-ready`. **Nunca resuelve bajo demanda**: lee lo que el job ya consolidó.
 
 ```json
 // 200
@@ -54,7 +54,7 @@
 Calendario completo con todos los días, sin filtrar por estado. `404` si no existe.
 
 ### `GET /api/v1/calendars/by-contract/{contractId}` ([MS4#11](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/11))
-El calendario que creó el contrato de MS3 (a lo sumo uno: `POST /schedule` es idempotente por contrato). Misma forma que `GET /calendars/{id}`. `404` si MS3 todavía no lo creó.
+El calendario que creó el contrato de MS3 (a lo sumo uno: la creación es idempotente por contrato). Misma forma que `GET /calendars/{id}`. `404` si MS3 todavía no lo creó.
 
 ### `GET /api/v1/calendars/by-patient/{patientId}` ([MS4#11](https://github.com/Nur-tricenter/ms4-delivery-schedule-management/pull/11))
 Todos los calendarios del paciente, del más nuevo al más viejo. Lista vacía si no tiene.

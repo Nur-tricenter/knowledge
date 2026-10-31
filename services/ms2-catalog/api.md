@@ -27,13 +27,13 @@
 | POST | `/meal-plans/meal-times` | Frontend | `catalog.mealPlan:edit` | no |
 | POST | `/meal-plans/assign-recipes` | Frontend | `catalog.mealPlan:edit` | no |
 | DELETE | `/meal-plans/{mealPlanId}/meal-times/{mealTimeId}/recipes/{recipeId}` | Frontend | `catalog.mealPlan:edit` | no |
-| GET | `/meal-plans/{mealPlanId}` | Frontend, MS4 | `catalog.mealPlan:read` | sí |
+| GET | `/meal-plans/{mealPlanId}` | Frontend | `catalog.mealPlan:read` | sí |
 | GET | `/meal-plans` | Frontend | `catalog.mealPlan:read` | sí |
 | GET | `/health` | Consul | (anónimo) | sí |
 
 Todas las rutas son relativas al servicio (`/api/v1/...`). En el gateway se antepone `/api/catalog` (p. ej. `POST /api/catalog/v1/foods`).
 
-MS4 es el único servicio que llama a MS2 por REST, y solo a `GET /api/catalog/v1/meal-plans/{id}` (`CatalogOptions.MealPlanPathTemplate`). Ningún otro MS consulta `/foods` ni `/recipes`.
+No service calls MS2 over REST. MS4 used to call `GET /api/catalog/v1/meal-plans/{id}` (`CatalogOptions.MealPlanPathTemplate`); since MS4#12 it projects the `meal-plan-composition-changed` event instead (see [messaging.md](./messaging.md)). No MS queries `/foods` or `/recipes` either.
 
 El kernel `Nur.Tricenter.Access` define además `catalog.food:manage`, `catalog.recipe:manage` y `catalog.mealPlan:manage` (entran en `CatalogPermission.PermissionsList`, así que existen como policy), pero **ningún endpoint los exige** (ver ms2-gap-12).
 
@@ -164,11 +164,11 @@ Publica `meal-plan-published` (outbox) con `PlanId`, `Name`, `DurationType` (str
 Quita la asignación de una receta. `200` si existía; `400` si el plan/meal time no existe o la receta no estaba asignada.
 
 ### `GET /api/v1/meal-plans/{mealPlanId}`
-Composición completa del plan (read model), usada por MS4:
+Composición completa del plan (read model), for the frontend (MS4 used it until MS4#12):
 ```json
 { "success": true, "data": { "mealPlanId": "…", "name": "Plan keto 15 días", "authorId": "…guid… | null", "authorName": "… | null", "days": [ { "dayNumber": 1, "mealTimes": [ { "mealTimeId": "…", "name": "Breakfast", "order": 1, "recipes": [ { "recipeId": "…", "recipeName": "Ensalada cesar", "ration": { "quantity": 1 }, "ingredients": [ { "foodId": "…", "foodName": "LECHUGA", "portion": { "quantity": 100 } } ] } ] } ] } ] } }
 ```
-`404` si no existe. `authorId` es el `AuthorId` del plan (null en los planes sembrados); `authorName` es el `UserName` de `PlanAuthors` y queda en `null` si el autor todavía no fue proyectado desde `user-published`. MS4 ignora ambos campos.
+`404` si no existe. `authorId` es el `AuthorId` del plan (null en los planes sembrados); `authorName` es el `UserName` de `PlanAuthors` y queda en `null` si el autor todavía no fue proyectado desde `user-published`. MS4 ignored both fields.
 
 ### `GET /api/v1/meal-plans`
 Lista **plana** de planes (`ListMealPlansHandler`), sin días, tiempos de comida ni recetas:

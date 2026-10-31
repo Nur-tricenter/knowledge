@@ -1,77 +1,36 @@
 # Integraciones síncronas — MS3
 
 ## Resumen
-| Destino | Método y ruta | Vía | Auth | Para qué |
-|---|---|---|---|---|
-| MS4 | `POST /api/delivery-calendar/v1/schedule` | gateway | `service-account:ms3-service` | Crear el calendario de entregas al pagar un contrato |
-| MS4 | `GET /api/delivery-calendar/v1/calendars/active-tomorrow?date=` | gateway | `service-account:ms3-service` | Obtener las entregas (con su menú) para la orden de producción |
-| Identity | `POST /api/identity-service/v1/auth/login` | gateway | ninguna | Obtener el JWT de `ms3-service` |
+**None.** Since MS3#11 MS3 makes no outbound HTTP call: there is no REST between MS3 and any other service. `sync_calls` in [service.yaml](./service.yaml) is empty.
 
-## Detalle
+| Was | Is now |
+|---|---|
+| MS3 → MS4 `POST /api/delivery-calendar/v1/schedule` (create the calendar) | MS3 publishes `contract-activated`; MS4 creates the calendar ([messaging.md](./messaging.md)) |
+| MS3 → MS4 `GET /api/delivery-calendar/v1/calendars/active-tomorrow` (production order) | MS4 publishes `production-order-ready`; MS3 projects it into `ScheduledDeliveries` |
+| MS3 → MS1 `GET /api/clinica-nutricional/v1/Patient/{id}` (patient) | MS1 publishes `paciente-published`; MS3 projects it into `ClinicPatients` |
+| MS3 → Identity `POST /api/identity-service/v1/auth/login` (token of `ms3-service`) | Gone: nothing to authenticate. `ms3-service` still exists in identity (the demo console's security view uses it) |
 
-### MS3 → MS4: crear el calendario
-- **Puerto / adaptador en el código:** `IDeliveryCalendarClient` / `HttpDeliveryCalendarClient` (`Infrastructure/DeliveryCalendar/`). Lo invoca `OutboxRelay`, no el handler del pago.
-- **Ruta exacta:** `POST /api/delivery-calendar/v1/schedule` con `{ contractId, patientId, planId, duration, startDate }`.
-- **Datos que MS3 decide:**
-  - `duration` = días del plan. Sale de la simulación o de `TotalDays` del plan proyectado desde MS2.
-  - `startDate` = **el día siguiente al pago** (UTC).
-- **Autenticación:** JWT de la service account `ms3-service`, con el scope `deliveryCalendar.calendar:create`.
-- **Por qué es síncrono:** MS4 ya diseñó este paso como un POST idempotente por `contractId`; MS3 necesita saber si el calendario se aceptó o se rechazó (por ejemplo, por duración inválida).
-- **Por qué sale del outbox y no del handler:** el cobro no debe fallar porque MS4 esté caído. El handler guarda la factura y la fila `CreateSchedule`; el worker la entrega después. **No es la misma transacción:** `ProcessPaymentCommandHandler` llama dos veces a `CommitAsync` (primero el contrato y la factura, después la fila), sin transacción explícita. Si el proceso cae entre ambos, el contrato queda pagado y sin fila, y el calendario nunca se pide (`ms3-gap-11`).
-- **Si falla:**
-  | Respuesta de MS4 | Estado de la fila | Reintento |
-  |---|---|---|
-  | 200 (nuevo o ya existente) | `Published` | — |
-  | 400 / 422 (p. ej. duración ≠ 15/30) | `Rejected` | no |
-  | 401, 5xx o sin respuesta | sigue `Simulated` | cada 5 s (`Outbox__PollingIntervalSeconds`) |
-  | `DeliveryCalendar__BaseUrl` sin configurar | `Unroutable` | no |
-  | Plan sin duración conocida | `Rejected` | no |
-  | El API cae entre los dos `CommitAsync` del pago | no hay fila | nunca (`ms3-gap-11`) |
-- **Modo sin dependencia:** en standalone no hay `DeliveryCalendar__BaseUrl`; el cliente es `DisabledDeliveryCalendarClient` y las filas quedan `Unroutable`.
+What was deleted from the code: `Infrastructure/DeliveryCalendar/` (`IDeliveryCalendarClient`, `HttpDeliveryCalendarClient`, `DisabledDeliveryCalendarClient`, `DeliveryCalendarSimulationService`, `ServiceAccountTokenHandler`/`ServiceAccountTokenProvider`, `DeliveryCalendarRejectedException`), `Infrastructure/Clinic/` (`IClinicClient`, `HttpClinicClient`, `ClinicSimulationService`) and the `Identity`, `Clinic` and `DeliveryCalendar` options (`*__BaseUrl`, login credentials). `contracting.compose.yml` no longer sets them.
 
-### MS3 → MS4: orden de producción
-- **Puerto / adaptador en el código:** `DeliveryCalendarSimulationService`, que decora a `ISimulationService.GetActiveCalendars`.
-- **Ruta exacta:** `GET /api/delivery-calendar/v1/calendars/active-tomorrow?date=YYYY-MM-DD`.
-- **Autenticación:** `ms3-service`, con el scope `deliveryCalendar.productionOrder:read`.
-- **Qué usa MS3 de la respuesta:** `packId` (se traduce a un GUID derivado), `patientId`, `planId`, `hour`, `address`, `latitude`, `longitude` y `menu` (recetas y raciones del día).
-- **Por qué es síncrono:** la orden se pide en un momento exacto (la noche anterior) y MS4 la consolidó antes. MS4 no resuelve bajo demanda.
-- **Quién lo usa:** `GET /production/daily-order`, el etiquetado de paquetes y la validación de calidad (para la dirección y las coordenadas).
-- **Si falla:** no hay valor por defecto honesto. La orden diaria responde 500; no se crea nada. Si MS4 devuelve `[]`, responde 404 `NO_CALENDARS`.
-- **Compatibilidad:** `menu` es un campo nuevo que MS3 le propone a MS4. Está en la rama `feat/active-tomorrow-menu` de MS4, **sin PR**; `main` de MS4 todavía no lo devuelve (`ms3-gap-07`). Sin él, MS3 usa la estructura simulada del plan y, si tampoco la hay, responde 422 `NO_RECIPES`.
-- **Modo sin dependencia:** sin `DeliveryCalendar__BaseUrl`, `SimulationDataService` devuelve 3 calendarios fijos.
+## Why events instead of calls
+- **Course rule:** avoid synchronous communication between services (no REST unless it is a small query).
+- **The old reasons for REST did not hold.** MS3 → MS4 `POST /schedule` was "synchronous so MS3 learns if the calendar was accepted", but it already ran from the outbox, outside the payment, so MS3 never answered the patient with that result anyway. `active-tomorrow` was "the whole picture of the day at a given moment": a full-snapshot event gives the same picture without a live dependency.
+- **Autonomy:** MS3 keeps working (daily order, label, validate) while MS1 or MS4 are down, with the last data they published.
 
-### MS3 → Identity: login de la service account
-- **Puerto / adaptador:** `ServiceAccountTokenProvider` + `ServiceAccountTokenHandler` (`DelegatingHandler` que agrega el `Bearer` a cada llamada a MS4).
-- **Cuenta:** `ms3-service`, con los scopes `deliveryCalendar.calendar:create` y `deliveryCalendar.productionOrder:read` (mínimo privilegio). La crea `start-stack` de `nur-tricenter-local` con el admin sembrado.
-- **Token:** se guarda en memoria hasta 60 s antes de vencer. Si MS4 responde 401 a un GET, renueva el token y reintenta una vez.
-- **Si falla:** 401 de identity lanza `InvalidOperationException`; la fila del outbox queda pendiente.
+## Reading the data MS3 needs
+Both projections are read through a decorator over `ISimulationService` (`ProjectedDataSimulationService`), enabled by the flag **`Projections__Enabled=true`** (set on the platform API in `contracting.compose.yml`). Without the flag (standalone) the 3 simulated patients and the simulated calendars answer, as before; on the platform, with the flag, only what was published exists:
+
+- **Patients:** `GetPatient` reads `ClinicPatients` (full name = `FirstName` + `LastName`, phone). An unknown patient is the existing `PATIENT_NOT_FOUND` 404 — also when the sample data knows the id. Used by contract creation, the label and package release (where `PackageValidated.PatientPhone` comes from). If the patient is unknown when the package is released, the event still goes out with a null phone (the package is already approved).
+- **Next-day deliveries:** `GetActiveCalendars(date)` reads `ScheduledDeliveries` of that `DeliveryDate`. Used by `GET /production/daily-order`, the label and the quality validation (address and coordinates). If MS4 has not published an order for the date there are no deliveries and the daily order answers 404 `NO_CALENDARS`; there is no "MS4 is down" error any more, because nothing is called.
 
 ```mermaid
 sequenceDiagram
-  participant W as MS3 Worker
-  participant G as Gateway
-  participant ID as Identity
-  participant M4 as MS4
-  W->>G: POST /api/identity-service/v1/auth/login (ms3-service)
-  G->>ID: POST /api/v1/auth/login
-  ID-->>W: { accessToken, expiresIn }
-  W->>G: POST /api/delivery-calendar/v1/schedule (Bearer)
-  G->>M4: POST /api/v1/schedule
-  M4-->>W: 200 { calendarId, days[] }
-```
-
-## MS3 → MS1: pacientes (`Clinic__BaseUrl`)
-MS3 lee el paciente de MS1 por REST, sin copia local, con la misma service account `ms3-service` que usa para MS4. Lo usan el alta del contrato, la etiqueta y la liberación del paquete (de donde sale el teléfono para `PackageValidated.PatientPhone`). Sin `Clinic__BaseUrl` (standalone) se usan 3 pacientes simulados.
-
-- **Ruta:** `GET /api/clinica-nutricional/v1/Patient/{id}` (MS1 solo exige un token válido, sin scopes). Responde la entidad `Paciente` (`id`, `nombre`, `apellido`, `telefono`, …); `404` si no existe (MS1#2).
-- **Fallos:** un `404` se traduce en `PATIENT_NOT_FOUND`. Si MS1 no responde al liberar el paquete, el evento sale igual con `PatientPhone` nulo (el paquete ya quedó aprobado).
-
-```mermaid
-sequenceDiagram
-  participant M3 as MS3
-  participant G as Gateway
-  participant M1 as MS1
-  M3->>G: GET /api/clinica-nutricional/v1/Patient/{id} (Bearer ms3-service)
-  G->>M1: GET /api/v1/Patient/{id}
-  M1-->>M3: 200 { id, nombre, apellido, telefono, … } | 404
+  participant K as Kitchen / ops
+  participant MS3
+  participant DB as MS3 DB (ScheduledDeliveries)
+  K->>MS3: GET /production/daily-order?productionDate=2026-10-25
+  MS3->>DB: rows of DeliveryDate 2026-10-25
+  DB-->>MS3: lines with address, coordinates and menu
+  MS3-->>K: 200 { recipesSummary[...] }
+  Note over MS3,DB: no call to MS4: the rows come from the production-order-ready event
 ```

@@ -94,11 +94,11 @@ classDiagram
 ## Máquina de estados de `DeliveryDay`
 ```mermaid
 stateDiagram-v2
-  [*] --> Pending : POST /schedule
+  [*] --> Pending : contract-activated / POST /schedule
   Pending --> Scheduled : SetAddress (POST addresses)
   Scheduled --> Scheduled : SetAddress / Reschedule
   Pending --> Pending : Reschedule (fuera de 48h)
-  Scheduled --> ReadyForProduction : MarkReadyForProduction (job de catálogo, menú de MS2)
+  Scheduled --> ReadyForProduction : MarkReadyForProduction (job de catálogo, menu from PlanDayMenus)
   ReadyForProduction --> Delivered : ApplyDeliveryResult (MS5)
   ReadyForProduction --> Failed : ApplyDeliveryResult (MS5)
   InProduction --> Delivered : ApplyDeliveryResult
@@ -136,5 +136,7 @@ stateDiagram-v2
 | Dato | Origen | Cómo se mantiene |
 |---|---|---|
 | `PlanCatalog` (plan, nombre, días totales, comidas por día) | MS2, evento `meal-plan-published` | Upsert al recibir el evento |
-| `DeliveryDay.Menu` (receta, nombre, raciones) | MS2, `GET /meal-plans/{id}` | Se copia en el job diario. El nombre de la receta se refresca con `recipe-updated` mientras el día no esté cerrado |
+| `PlanDayMenus` + `PlanDayMenuItems` (plan id + day number, with meal time, order, recipe, name, rations, `SnapshotAt`) | MS2, event `meal-plan-composition-changed` | Upsert per day on each snapshot; an older snapshot is ignored. Read by `ProjectedCatalogPort`. No backfill |
+| `DeliveryDay.Menu` (receta, nombre, raciones) | `PlanDayMenus` (which comes from MS2's event) | Se copia en el job diario. El nombre de la receta se refresca con `recipe-updated` mientras el día no esté cerrado |
+| `OutboxMessages` (own, not a copy) | — | Pending `ProductionOrderReady` events: `Id`, `Type`, `Destination`, `Payload` (jsonb), `CreatedAt`, `PublishedAt` |
 | `PatientId` | MS1 (vía MS3) | Solo la referencia; MS4 no guarda datos del paciente |
