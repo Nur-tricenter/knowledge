@@ -1,14 +1,14 @@
 # Gaps transversales
 
 Problemas que involucran **a más de un servicio**. Los gaps internos de cada MS van en `services/<ms>/gaps.md`.
-Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07, X-10 y X-11 revisados el 2026-10-24 con la ficha de MS5. **Revisión transversal del 2026-10-28** contra el código de todos los repos (`main` de cada uno; MS1 en su repo externo): actualiza X-02, X-04, X-06, X-07 y X-10 y agrega X-12 a X-14. **Actualización del 2026-10-29** con los PR mergeados el 28 y 29: cierra X-01, X-10, X-12 y X-16; actualiza X-04, X-06 y X-07. Al resolver uno, márcalo como cerrado e indica el PR.
+Relevado el 2026-10-23 a partir del código de los repos de la org; X-01 a X-04, X-06, X-07, X-10 y X-11 revisados el 2026-10-24 con la ficha de MS5. **Revisión transversal del 2026-10-28** contra el código de todos los repos (`main` de cada uno; MS1 en su repo externo): actualiza X-02, X-04, X-06, X-07 y X-10 y agrega X-12 a X-14. **Actualización del 2026-10-29** con los PR mergeados el 28 y 29: cierra X-01, X-10, X-12 y X-16; actualiza X-04, X-06 y X-07. **Actualización del 2026-10-30:** no hay PR abiertos antes de esta fecha; quedan en revisión los PR de X-01 (evidencia) y X-04 (pacientes reales, migración automática de MS5). Al resolver uno, márcalo como cerrado e indica el PR.
 
 | Id | Gap | Severidad | Servicios | Estado |
 |---|---|---|---|---|
-| X-01 | El ciclo de entrega solo cierra si `PackageId` es el `packId` de MS4 | high | MS3, MS5, MS4 | resuelto (kernel#5, MS3#6, MS5#5, MS4#6 y #8); falta la evidencia en `DeliveryCompleted` |
+| X-01 | El ciclo de entrega solo cierra si `PackageId` es el `packId` de MS4 | high | MS3, MS5, MS4 | resuelto (kernel#5, MS3#6, MS5#5, MS4#6 y #8); falta la evidencia en `DeliveryCompleted` (contrato en revisión: kernel#6, 1.5.0; luego MS5 y MS4 la consumen) |
 | X-02 | De los 10 exchanges de logística, solo los 3 de entrega tienen consumidor (MS4) | medium | MS5, consumidores | parcial |
 | X-03 | MS5 no valida JWT ni tiene scopes en el kernel | high | MS5, kernels | abierto |
-| X-04 | MS1 integrado a la plataforma desde 2026-10-31; MS3 sigue con pacientes simulados y MS5 no llama a MS1 (MS5#4) | medium | MS1, MS3, MS5 | abierto (parcial) |
+| X-04 | MS1 integrado a la plataforma desde 2026-10-31; MS3 sigue con pacientes simulados y MS5 no llama a MS1 (MS5#4) | medium | MS1, MS3, MS5 | abierto (parcial); en revisión: MS3 lee pacientes de MS1 (MS3#8, MS1#2, local#9); falta el teléfono hacia MS5 (`PatientPhone`, kernel#6) |
 | X-05 | La ruta de identity en el gateway está documentada de dos formas | low | identity, kernels | abierto |
 | X-06 | Hay colas declaradas sin consumidor | low | todos | abierto |
 | X-07 | Versiones mezcladas de los kernels | medium | todos | abierto |
@@ -112,7 +112,7 @@ Estado original en `nur-tricenter-local` (`main` 4a1d700, antes de #7):
 > **2026-10-31:** resuelto en su mayor parte con [MS1#1](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional/pull/1) y [nur-tricenter-local#8](https://github.com/Nur-tricenter/nur-tricenter-local/pull/8) (mergeados): Postgres, `--migrate`, JWT (solo "autenticado", sin scopes), Consul/gateway, `ms1.compose.yml` y evento corregido. Verificado con el stack completo y `e2e-smoke.py`. **Sigue abierto:** scopes de MS1 en `Nur.Tricenter.Access`, que alguien consuma `paciente-published` y el contrato de ese evento (sigue local, fuera del kernel y de la topología). Lo de abajo describe el estado previo.
 
 Para entrar al stack, MS1 necesitaba lo que ya tienen los demás y no tenía:
-- **Repo:** desde 2026-10-31 está en la org (`ms1-gestion-clinica-nutricional`, un solo commit). `setup-project` de `nur-tricenter-local` todavía clona el repo viejo de `Juandcode`.
+- **Repo:** desde 2026-10-31 está en la org (`ms1-gestion-clinica-nutricional`, un solo commit). `setup-project` de `nur-tricenter-local` ya clona este repo (verificado en `scripts/setup-project.ps1`); queda solo la carpeta local vieja `ms1-clinica-nutricional` en checkouts antiguos, que ya nadie usa.
 - **Persistencia:** usa SQL Server. La cadena ya sale de `ConnectionStrings:DefaultConnection` (antes estaba hardcodeada), pero el valor por defecto sigue siendo `localhost\SQLEXPRESS` con `Trusted_Connection`. No puede usar el Postgres compartido ni tiene base en `01-create-databases.sql`.
 - **Descubrimiento:** no se registra en Consul, así que el gateway no lo rutea.
 - **Seguridad:** no valida JWT; todos sus endpoints son anónimos. No hay scopes de MS1 en el kernel.
