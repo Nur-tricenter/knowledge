@@ -13,7 +13,7 @@ Los flujos siguen el recorrido clínico de un paciente. Solo F1 cruza la fronter
   4. El WorkerService lee el outbox y publica `PacientePublished` en `paciente-published`.
 - **Errores:** ninguno de negocio; fallos de BD → 500.
 - **Idempotencia:** ninguna. Repetir el request crea otro paciente (no hay unicidad de `CI`).
-- **Defecto conocido:** el evento sale con `PacienteId` vacío y con `CI`/`Nombre`/`Apellido` cruzados (ms1-gap-04).
+- **Evento:** sale con el `PacienteId` real y los campos en su sitio (corregido en MS1#1, ms1-gap-04). Verificado en RabbitMQ: un solo mensaje por paciente.
 
 ```mermaid
 sequenceDiagram

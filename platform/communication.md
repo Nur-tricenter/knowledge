@@ -128,5 +128,5 @@ Fuente: el código de cada repo a la fecha. La futura app visual la va a generar
 | Identity → todos | eventos | user-published, user-updated | `user-published` publicado y consumido por MS2; `user-updated` nunca se emite (no hay endpoint que lo dispare) |
 | MS3, MS4 → Identity | REST vía gateway | `POST /api/identity-service/v1/auth/login` | funcionando (token de service account) |
 | MS5 → MS4 / ? | eventos | 10 exchanges de logística | publicado (7 alcanzables); los 3 de entrega tienen cola `ms4.delivery-*`; los otros 7 solo llegan al sink `nurtricenter.default` |
-| MS1 → ? | evento | `paciente-published` | MS1 lo publica con contrato propio, fuera de la topología y del stack (X-13) |
+| MS1 → ? | evento | `paciente-published` | MS1 lo publica (corregido en MS1#1) con contrato propio, fuera de la topología y del kernel; nadie lo consume (X-13) |
 | Cualquiera → servicios | REST | gateway YARP, sin validar JWT | funcionando; MS1 no está registrado en Consul |

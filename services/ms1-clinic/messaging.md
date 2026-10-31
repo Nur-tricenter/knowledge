@@ -18,8 +18,8 @@
 
 El sobre de Joseco no tiene `EventType` (los contratos del kernel sí lo usan); el mensaje se serializa con Newtonsoft. Por eso `Paciente.Published` en [`contracts/events.yaml`](../../contracts/events.yaml) es una convención del catálogo, no un valor que viaje.
 
-### ⚠ El payload sale mal hoy
-> Repo nuevo (2026-10-31): `PublishIntegrationEventWhenPacienteCreated` usa `PacienteId = pacienteCreated.Id`, que es el id del evento de dominio, no el del paciente. La tabla de arriba describe el mapeo previsto (`PacienteCreated.PacienteId`), no el real. Los puntos 1 y 3 siguen igual; el 2 cambia: el id ya no es vacío pero tampoco es el del paciente.
+### Payload (corregido en MS1#1, 2026-10-31)
+> Verificado en RabbitMQ con un paciente real: el mensaje lleva el `PacienteId` del paciente y `CI`/`Nombre`/`Apellido` en su campo, y llegó **un solo** mensaje (la posible doble publicación no se reprodujo). Lo de abajo es el defecto original, que ya no ocurre.
 
 1. **Campos cruzados.** `Paciente.Crear` llama `new PacienteCreated(paciente.Id, nombre, apellido, ci)`, pero el constructor es `(pacienteId, ci, nombre, apellido)`. Resultado: `CI` lleva el nombre, `Nombre` lleva el apellido y `Apellido` lleva el CI.
 2. **`PacienteId` vacío.** El evento se crea dentro de `Crear`, antes de que EF Core asigne el `Id` (al hacer `AddAsync`). Sale `00000000-0000-0000-0000-000000000000`.

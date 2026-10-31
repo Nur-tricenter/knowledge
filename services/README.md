@@ -4,7 +4,7 @@ Una carpeta por microservicio, creada a partir de [`templates/service/`](../temp
 
 | Id | Carpeta | Owner | Estado |
 |---|---|---|---|
-| MS1 | [`ms1-clinic`](./ms1-clinic/README.md) | Diego Cabrera Alvarez (@Juandcode) | 🟨 `status: draft` (repo externo, no integrado) |
+| MS1 | [`ms1-clinic`](./ms1-clinic/README.md) | Diego Cabrera Alvarez (@Juandcode) | 🟨 `status: draft` (integrado al stack local desde 2026-10-31) |
 | MS2 | [`ms2-catalog`](./ms2-catalog/README.md) | Robert Perez Lino | ✅ `status: complete` |
 | MS3 | [`ms3-contracting`](./ms3-contracting/README.md) | Luis Jesus Ferrufino | ✅ `status: complete` |
 | MS4 | [`ms4-delivery-calendar`](./ms4-delivery-calendar/README.md) | Franklin Andre Romero Padilla | ✅ complete |

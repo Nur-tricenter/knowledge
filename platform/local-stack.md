@@ -2,9 +2,9 @@
 
 Runbook para levantar **toda** la plataforma en una máquina con Docker Compose y comprobar que funciona. Fuente: scripts y compose de `Nur-tricenter/nur-tricenter-local` (`main` posterior a nur-tricenter-local#7, revisado el 2026-10-29).
 
-> ✅ **El stack se recorrió de punta a punta el 2026-10-28, con las ramas de los PR; esos PR ya están en `main`** (no se repitió la corrida desde `main`). Ya están en `main` [nur-tricenter-local#7](https://github.com/Nur-tricenter/nur-tricenter-local/pull/7) (arregla X-12: vuelve identity, MS1 queda fuera del compose), [MS5#3](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/3) (consumidor de `package-validated`), [MS3#3](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/3), [MS3#4](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/4) y los PR de `DeliveryDayId` (kernel#5, MS3#6, MS5#5, MS4#6 y #8). Ver la sección [Prueba de punta a punta](#prueba-de-punta-a-punta).
+> ✅ **El stack se recorrió de punta a punta el 2026-10-28, con las ramas de los PR; esos PR ya están en `main`** (la corrida se repitió desde `main` el 2026-10-31, con MS1 incluido: ver abajo). Ya están en `main` [nur-tricenter-local#7](https://github.com/Nur-tricenter/nur-tricenter-local/pull/7) (arregla X-12: vuelve identity, MS1 queda fuera del compose), [MS5#3](https://github.com/Nur-tricenter/ms5-logistics-and-delivery/pull/3) (consumidor de `package-validated`), [MS3#3](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/3), [MS3#4](https://github.com/Nur-tricenter/ms3-contract-and-production/pull/4) y los PR de `DeliveryDayId` (kernel#5, MS3#6, MS5#5, MS4#6 y #8). Ver la sección [Prueba de punta a punta](#prueba-de-punta-a-punta).
 >
-> Si MS1 sigue sin fragmento de plataforma, queda comentado en `compose/docker-compose.yml` (ver su [ficha](../services/ms1-clinic/README.md) y X-13). Tras actualizar MS5, aplica sus migraciones (`AddInboxMessages`, `AddPatientNameToDelivery`, `AddDeliveryDayIdToDelivery`): MS5 no migra al arrancar.
+> **2026-10-31:** MS1 ya está incluido ([MS1#1](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional/pull/1) y [nur-tricenter-local#8](https://github.com/Nur-tricenter/nur-tricenter-local/pull/8)). Desde `main`: `start-stack.ps1` deja 16 contenedores sanos más 3 jobs de migración que terminan en 0, `clinica-nutricional` aparece en Consul y `e2e-smoke.py` sale verde con entrega exitosa y fallida (ver su [ficha](../services/ms1-clinic/README.md)). Justo después de reiniciar el stack el smoke puede fallar una vez en "MS2 read model shows the day-1 recipes" (I-10); basta repetirlo. Tras actualizar MS5, aplica sus migraciones (`AddInboxMessages`, `AddPatientNameToDelivery`, `AddDeliveryDayIdToDelivery`): MS5 no migra al arrancar.
 
 ## 1. Requisitos
 | Requisito | Para qué |
@@ -20,7 +20,7 @@ Todos los repos van **como hermanos** de `nur-tricenter-local`. `scripts/setup-p
 
 | Carpeta (nombre exacto) | Repo |
 |---|---|
-| `ms1-clinica-nutricional` | `Juandcode/ClinicaNutricionalMicroservicio1` (fuera de la org) |
+| `ms1-gestion-clinica-nutricional` | `Nur-tricenter/ms1-gestion-clinica-nutricional` |
 | `ms2-plans-and-recipes-catalog` | `Nur-tricenter/ms2-plans-and-recipes-catalog` |
 | `ms3-contract-and-production` | `Nur-tricenter/ms3-contract-and-production` |
 | `ms4-delivery-schedule-management` | `Nur-tricenter/ms4-delivery-schedule-management` |
@@ -37,7 +37,7 @@ Todos los repos van **como hermanos** de `nur-tricenter-local`. `scripts/setup-p
 | `docker-compose.infra.yml` | Plataforma | Postgres, RabbitMQ, Consul |
 | `../../ms2-plans-and-recipes-catalog/catalog.compose.yml` | MS2 | `catalog-api`, `catalog-workerservice` |
 | `../../nur-tricenter-identity/identity.compose.yml` (vuelve en #7, X-12) | Identity | `identity-migrate` (one-shot), `identity-api`, `identity-workerservice` |
-| `../../ms1-clinica-nutricional/ms1.compose.yml` — comentado: ese archivo no existe, tampoco en el repo nuevo `ms1-gestion-clinica-nutricional` (X-12, X-13) | MS1 | — |
+| `../../ms1-gestion-clinica-nutricional/ms1.compose.yml` | MS1 | `clinica-nutricional-migrate` (one-shot), `clinica-nutricional-api`, `clinica-nutricional-workerservice` |
 | `../../ms4-delivery-schedule-management/ms4.compose.yml` | MS4 | `delivery-calendar-migrate` (one-shot), `delivery-calendar-api`, `delivery-calendar-workerservice` |
 | `../../${NURTRICENTER_REPO_DIR:-ms5-logistics-and-delivery}/nurtricenter.compose.yml` | MS5 | `nurtricenter-api`, `nurtricenter-workerservice` |
 | `../../ms3-contract-and-production/contracting.compose.yml` | MS3 | `contracting-api`, `contracting-workerservice` |
@@ -59,7 +59,7 @@ Todos los repos van **como hermanos** de `nur-tricenter-local`. `scripts/setup-p
 | `nur-tricenter-contracting-api` / `-workerservice` | — (18083 en dev) | `contracting` → `/api/contracting` | `nur_tricenter_contracting` |
 | `nur-tricenter-delivery-calendar-api` / `-workerservice` / `-migrate` | — | `delivery-calendar` → `/api/delivery-calendar` | `ms4_delivery_calendar` |
 | `nur-tricenter-nurtricenter-api` / `-workerservice` | — | `nurtricenter` → `/api/nurtricenter` | Neon (fuera del stack) |
-| MS1 | — | no se registra | SQL Server propio (no integrable hoy) |
+| `nur-tricenter-clinica-nutricional-api` / `-workerservice` / `-migrate` | — | `clinica-nutricional` → `/api/clinica-nutricional` | `ms1_clinica_nutricional` |
 
 - Las credenciales de desarrollo (Postgres, RabbitMQ `guest`, admin de identity) están en los compose y scripts del repo; no se repiten aquí.
 - Las bases se crean con `POSTGRES_DB` + `topology/postgres-init/01-create-databases.sql`, **solo en un volumen nuevo**. No hay base para MS1.

@@ -30,7 +30,7 @@ flowchart TB
   MS1[MS1 Clínica<br/>fuera del stack] -. outbox propio .-> MQ1{{paciente-published<br/>fuera de la topología}}
 ```
 
-> MS1 existe como repo externo (`Juandcode/ClinicaNutricionalMicroservicio1`) pero no está integrado: no se registra en Consul, usa SQL Server propio y no valida JWT (ver [X-13](../gaps/cross-service-gaps.md) y su [ficha](../services/ms1-clinic/README.md)).
+> MS1 (`Nur-tricenter/ms1-gestion-clinica-nutricional`) está integrado al stack local desde 2026-10-31: Postgres, JWT, Consul como `clinica-nutricional` y compose de plataforma. Ver [X-13](../gaps/cross-service-gaps.md) y su [ficha](../services/ms1-clinic/README.md).
 
 ## Componentes
 
