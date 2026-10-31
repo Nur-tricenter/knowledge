@@ -37,7 +37,7 @@ Todos los repos van **como hermanos** de `nur-tricenter-local`. `scripts/setup-p
 | `docker-compose.infra.yml` | Plataforma | Postgres, RabbitMQ, Consul |
 | `../../ms2-plans-and-recipes-catalog/catalog.compose.yml` | MS2 | `catalog-api`, `catalog-workerservice` |
 | `../../nur-tricenter-identity/identity.compose.yml` (vuelve en #7, X-12) | Identity | `identity-migrate` (one-shot), `identity-api`, `identity-workerservice` |
-| `../../ms1-clinica-nutricional/ms1.compose.yml` — comentado: ese archivo no existe (X-12, X-13) | MS1 | — |
+| `../../ms1-clinica-nutricional/ms1.compose.yml` — comentado: ese archivo no existe, tampoco en el repo nuevo `ms1-gestion-clinica-nutricional` (X-12, X-13) | MS1 | — |
 | `../../ms4-delivery-schedule-management/ms4.compose.yml` | MS4 | `delivery-calendar-migrate` (one-shot), `delivery-calendar-api`, `delivery-calendar-workerservice` |
 | `../../${NURTRICENTER_REPO_DIR:-ms5-logistics-and-delivery}/nurtricenter.compose.yml` | MS5 | `nurtricenter-api`, `nurtricenter-workerservice` |
 | `../../ms3-contract-and-production/contracting.compose.yml` | MS3 | `contracting-api`, `contracting-workerservice` |

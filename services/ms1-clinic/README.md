@@ -1,8 +1,8 @@
 # MS1 — Clínica nutricional
 
-> **Owner:** Diego Cabrera (@Juandcode) · **Repo:** [Juandcode/ClinicaNutricionalMicroservicio1](https://github.com/Juandcode/ClinicaNutricionalMicroservicio1) · **Estado de la ficha:** draft
+> **Owner:** Diego Cabrera (@Juandcode) · **Repo:** [Nur-tricenter/ms1-gestion-clinica-nutricional](https://github.com/Nur-tricenter/ms1-gestion-clinica-nutricional) (desde 2026-10-31; antes [Juandcode/ClinicaNutricionalMicroservicio1](https://github.com/Juandcode/ClinicaNutricionalMicroservicio1)) · **Estado de la ficha:** draft
 
-> ⚠ **Repo fuera de la org; no integrado a la plataforma hoy.** El código vive en una cuenta personal, no en `Nur-tricenter`. No se registra en Consul, no está detrás del gateway, no valida JWT, usa su propio SQL Server y el `ms1.compose.yml` que espera `nur-tricenter-local` no existe. Ningún otro servicio lo llama de verdad. Esta ficha documenta **lo que hace el código** (rama `main`, 2026-10-24) y, por separado, [lo que la plataforma espera de MS1](#lo-que-la-plataforma-espera-de-ms1).
+> ⚠ **Ya está en la org, pero no integrado a la plataforma.** El repo nuevo tiene un solo commit (`ee1d631`, "first commit") y es el mismo código con pocos cambios: la cadena de conexión ya sale de configuración (`ConnectionStrings:DefaultConnection`), hay un workflow de tests y una migración `FixOutboxModel`. Sigue sin registrarse en Consul, sin gateway, sin validar JWT, con su propio SQL Server y sin `ms1.compose.yml`, que `nur-tricenter-local` tampoco incluye (MS1 está comentado en el compose). Ningún otro servicio lo llama de verdad. Esta ficha documenta **lo que hace el código** (rama `main`, 2026-10-31) y, por separado, [lo que la plataforma espera de MS1](#lo-que-la-plataforma-espera-de-ms1).
 
 ## Propósito
 MS1 es la parte **clínica** del negocio: registra al paciente, toma su consulta inicial (peso, altura, antecedentes, hábitos alimenticios), la aprueba, le asigna un plan alimenticio y hace el seguimiento con evaluaciones de control. Sin MS1 no hay paciente registrado ni historia clínica que justifique el plan que después se contrata y se entrega.
